@@ -46,7 +46,6 @@ const shutdown = new ShutdownController();
 const routeFixture = new ZProviderFixtureV1();
 const dependencies: FixtureDependencies = {
   routes: {
-    fixtureVersion: 'fixture-v1',
     async resolveAndValidateRoute(input, signal) {
       if (!enabledOperations.has(input.operation)) {
         throw new SafeExecutionError({
