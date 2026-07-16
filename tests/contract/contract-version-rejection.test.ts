@@ -1,0 +1,1 @@
+import { ExecutionRequestV1Schema } from '../../src/contracts/v1/execution.js';import { validRequest } from '../unit/test-request.js';test('rejects unknown contract major',()=>expect(()=>ExecutionRequestV1Schema.parse({...validRequest(),contractVersion:'zx.execution.v2'})).toThrow())

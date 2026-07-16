@@ -1,0 +1,1 @@
+import type { ResolveRouteV1,RouteSnapshotV1 } from '../contracts/v1/dependencies.js';export interface ZProviderRouteClient{resolveAndValidateRoute(input:ResolveRouteV1,signal:AbortSignal):Promise<RouteSnapshotV1>}export function createRealZProviderClient():ZProviderRouteClient{throw new Error('real Z-Provider client disabled pending owner-published contract')}
