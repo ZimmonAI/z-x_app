@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { AutoHubFixtureV1 } from '../../fixtures/v1/auto-hub.js';
+import { ZAccountFixtureV1 } from '../../fixtures/v1/z-account.js';
+import { ZProviderFixtureV1 } from '../../fixtures/v1/z-provider.js';
+import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';
+import { PostgresExecutionService } from '../../src/api/routes/executions.js';
 import { ExecutionsRepository } from '../../src/persistence/repositories/executions.js';
 import { claimNext } from '../../src/worker/claim.js';
+import { prepareManualRetry } from '../../src/worker/reconciliation.js';
 import { validRequest } from '../unit/test-request.js';
 import { reset, testPool } from './db-helper.js';
 
@@ -30,5 +36,34 @@ test('two workers cannot claim one prepared execution', async () => {
   ]);
   expect([first, second].filter(Boolean)).toHaveLength(1);
   expect([first, second].find(Boolean)?.attemptId).toBe(attemptId);
+  await pool.end();
+});
+
+test('manual retry is prepared before it becomes claimable', async () => {
+  const pool = testPool();
+  await reset(pool);
+  const repository = new ExecutionsRepository(pool);
+  const submitted = await repository.submit(validRequest() as never);
+  await pool.query(
+    `update execution.executions
+        set status='failed', terminal_at=now()
+      where id=$1`,
+    [submitted.id],
+  );
+
+  const service = new PostgresExecutionService(pool);
+  const retry = await service.retry('video-maker', submitted.id);
+  expect(retry?.code).toBe(202);
+  expect(await claimNext(pool, 'worker-before-preparation')).toBeNull();
+
+  expect(
+    await prepareManualRetry(pool, 'retry-preparer', 60, {
+      routes: new ZProviderFixtureV1(),
+      capacity: new ZAccountFixtureV1(),
+      autoHub: new AutoHubFixtureV1(),
+      storage: new ZStorageFixtureV1(),
+    }),
+  ).toBe(true);
+  expect(await claimNext(pool, 'worker-after-preparation')).not.toBeNull();
   await pool.end();
 });
