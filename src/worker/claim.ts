@@ -1,2 +1,68 @@
-import type pg from 'pg';import { randomUUID } from 'node:crypto';
-export async function claimNext(pool:pg.Pool,workerId:string,leaseSeconds=60){const c=await pool.connect();try{await c.query('begin');const q=await c.query("select id from execution.executions where status='queued' order by priority desc,created_at asc,id asc for update skip locked limit 1");if(!q.rowCount){await c.query('commit');return null}const executionId=q.rows[0].id as string;const a=await c.query('select id from execution.execution_attempts where execution_id=$1 order by attempt_number desc limit 1',[executionId]);const attemptId=(a.rows[0]?.id as string|undefined)??randomUUID();if(!a.rowCount)await c.query("insert into execution.execution_attempts(id,execution_id,attempt_number,status,started_at) values($1,$2,1,'created',now())",[attemptId,executionId]);const token=randomUUID();await c.query("update execution.execution_attempts set status='running',worker_id=$2,lease_token=$3,lease_expires_at=now()+make_interval(secs=>$4),heartbeat_at=now(),updated_at=now() where id=$1",[attemptId,workerId,token,leaseSeconds]);await c.query("update execution.executions set status='running',current_attempt_number=greatest(current_attempt_number,1),lock_version=lock_version+1,updated_at=now() where id=$1",[executionId]);await c.query('commit');return{executionId,attemptId,leaseToken:token}}catch(e){await c.query('rollback');throw e}finally{c.release()}}
+import { randomUUID } from 'node:crypto';
+import type pg from 'pg';
+import { withTransaction } from '../persistence/transaction.js';
+import type { ClaimedExecution } from './lifecycle.js';
+
+export async function claimNext(
+  pool: pg.Pool,
+  workerId: string,
+  leaseSeconds = 60,
+): Promise<ClaimedExecution | null> {
+  return withTransaction(pool, async (client) => {
+    const selected = await client.query<{
+      execution_id: string;
+      attempt_id: string;
+      trace_id: string;
+    }>(
+      `select e.id as execution_id, a.id as attempt_id, r.trace_id
+         from execution.executions e
+         join execution.execution_requests r on r.id=e.request_id
+         join execution.execution_attempts a
+           on a.execution_id=e.id and a.attempt_number=e.current_attempt_number
+        where e.status='queued' and a.status='queued'
+          and a.route_snapshot is not null and a.capacity_snapshot is not null
+          and (a.lease_expires_at is null or a.lease_expires_at<=now())
+        order by e.priority desc, e.created_at asc, e.id asc
+        for update of e, a skip locked
+        limit 1`,
+    );
+    const row = selected.rows[0];
+    if (!row) return null;
+
+    const leaseToken = randomUUID();
+    const attempt = await client.query(
+      `update execution.execution_attempts
+          set status='running', worker_id=$2, lease_token=$3,
+              lease_expires_at=now()+make_interval(secs=>$4),
+              heartbeat_at=now(), updated_at=now()
+        where id=$1 and status='queued'
+          and (lease_expires_at is null or lease_expires_at<=now())
+        returning id`,
+      [row.attempt_id, workerId, leaseToken, leaseSeconds],
+    );
+    if (!attempt.rowCount) return null;
+
+    const execution = await client.query(
+      `update execution.executions
+          set status='running', lock_version=lock_version+1, updated_at=now()
+        where id=$1 and status='queued'
+        returning id`,
+      [row.execution_id],
+    );
+    if (!execution.rowCount) throw new Error('execution claim state changed');
+
+    await client.query(
+      `insert into execution.execution_status_transitions
+        (event_key, execution_id, attempt_id, from_status, to_status,
+         reason_family, actor_type, actor_ref, trace_id, safe_metadata)
+       values ($1,$2,$3,'queued','running','claimed','worker',$4,$5,'{}'::jsonb)`,
+      [randomUUID(), row.execution_id, row.attempt_id, workerId, row.trace_id],
+    );
+
+    return {
+      executionId: row.execution_id,
+      attemptId: row.attempt_id,
+      leaseToken,
+    };
+  });
+}
