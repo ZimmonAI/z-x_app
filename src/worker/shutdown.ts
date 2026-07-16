@@ -20,13 +20,22 @@ export class ShutdownController {
     return this.active.size;
   }
 
-  async drain(milliseconds = 30_000): Promise<boolean> {
+  async drain(milliseconds?: number): Promise<boolean>;
+  async drain(tasks: ReadonlySet<Promise<unknown>>, milliseconds?: number): Promise<boolean>;
+  async drain(
+    tasksOrMilliseconds: ReadonlySet<Promise<unknown>> | number = this.active,
+    maybeMilliseconds = 30_000,
+  ): Promise<boolean> {
+    const tasks =
+      typeof tasksOrMilliseconds === 'number' ? this.active : tasksOrMilliseconds;
+    const milliseconds =
+      typeof tasksOrMilliseconds === 'number' ? tasksOrMilliseconds : maybeMilliseconds;
     let timeoutHandle: NodeJS.Timeout | undefined;
     const timeout = new Promise<'timeout'>((resolve) => {
       timeoutHandle = setTimeout(() => resolve('timeout'), milliseconds);
     });
     const result = await Promise.race([
-      Promise.allSettled([...this.active]).then(() => 'done' as const),
+      Promise.allSettled([...tasks]).then(() => 'done' as const),
       timeout,
     ]);
     if (timeoutHandle) clearTimeout(timeoutHandle);
