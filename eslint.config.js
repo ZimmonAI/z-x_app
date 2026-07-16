@@ -2,7 +2,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default [
-  { ignores: ['dist/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'node_modules/**', '.runtime/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -17,6 +17,12 @@ export default [
     files: ['tests/**/*.ts'],
     languageOptions: {
       globals: { test: 'readonly', expect: 'readonly', describe: 'readonly', beforeEach: 'readonly', afterEach: 'readonly' }
+    }
+  },
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', URL: 'readonly' }
     }
   }
 ];
