@@ -41,6 +41,13 @@ jobs:
           node-version: 22
           cache: npm
       - name: Exact source acceptance command
-        run: npm ci && npm run validate
-
-# validation trigger after draft PR creation
+        shell: bash
+        run: |
+          set -o pipefail
+          (npm ci && npm run validate) 2>&1 | tee validation.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-validation-03b0-${{ github.run_number }}-${{ github.run_attempt }}
+          path: validation.log
+          if-no-files-found: error
