@@ -42,3 +42,5 @@ jobs:
           cache: npm
       - name: Exact source acceptance command
         run: npm ci && npm run validate
+
+# validation trigger after draft PR creation
