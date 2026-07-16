@@ -1,9 +1,6 @@
 name: source-validation-bootstrap
 
 on:
-  push:
-    branches:
-      - agent/implement-z-x-execution-runner-foundation
   pull_request:
     branches:
       - main
@@ -12,73 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  reconstruct:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.head_ref || github.ref_name }}
-
-      - name: Reconstruct source bundle
-        shell: bash
-        run: |
-          exec > >(tee reconstruct.log) 2>&1
-          set -euxo pipefail
-          python3 - <<'PY'
-          import base64
-          from pathlib import Path
-
-          def normalized_text(path: Path) -> str:
-              value = ''.join(path.read_text(encoding='utf-8-sig').split())
-              print(f'{path}: {len(value)} base64 characters')
-              return value
-
-          source_parts = sorted(Path('.bootstrap-patch').glob('source.part-*'))
-          print('source parts:', [part.name for part in source_parts])
-          if len(source_parts) != 2:
-              raise SystemExit(f'expected 2 source parts, found {len(source_parts)}')
-          source_encoded = ''.join(normalized_text(part) for part in source_parts)
-          source_bytes = base64.b64decode(source_encoded)
-          print('source archive bytes:', len(source_bytes), source_bytes[:4].hex())
-          Path('/tmp/zx-source.tar.gz').write_bytes(source_bytes)
-
-          patch_path = Path('.bootstrap-fix/source.patch.b64')
-          patch_encoded = normalized_text(patch_path)
-          patch_bytes = base64.b64decode(patch_encoded)
-          print('patch archive bytes:', len(patch_bytes), patch_bytes[:4].hex())
-          Path('/tmp/zx-fix.tar.gz').write_bytes(patch_bytes)
-          PY
-          gzip -tv /tmp/zx-source.tar.gz
-          gzip -tv /tmp/zx-fix.tar.gz
-          tar -tzf /tmp/zx-source.tar.gz | head
-          tar -tzf /tmp/zx-fix.tar.gz | head
-          tar -xzf /tmp/zx-source.tar.gz -C .
-          tar -xzf /tmp/zx-fix.tar.gz -C .
-          test -f package.json
-          test -f src/worker/lifecycle.ts
-          rm -rf .bootstrap .bootstrap-fix .bootstrap-patch /tmp/zx-source.tar.gz /tmp/zx-fix.tar.gz
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: reconstruction-diagnostics-${{ github.run_attempt }}
-          path: reconstruct.log
-          if-no-files-found: warn
-
-      - uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: reconstructed-source-${{ github.run_attempt }}
-          path: |
-            .
-            !.git/**
-            !.github/**
-            !reconstruct.log
-          include-hidden-files: true
-
   validate:
-    needs: reconstruct
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -97,22 +28,16 @@ jobs:
     env:
       ZX_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/zx_test
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: reconstructed-source-${{ github.run_attempt }}
-          path: .
+          fetch-depth: 0
+          ref: ${{ github.head_ref }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Bootstrap exact approved dependencies
-        if: ${{ hashFiles('package-lock.json') == '' }}
-        run: |
-          npm install --save-exact fastify zod pg jose pino prom-client @opentelemetry/api
-          npm install --save-dev --save-exact typescript vitest eslint @eslint/js typescript-eslint @types/node @types/pg
-
-      - name: Install from committed or generated lockfile
+      - name: Install exact committed dependencies
         run: npm ci
 
       - name: Full deterministic validation
@@ -130,8 +55,16 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const branch = 'agent/implement-z-x-execution-runner-foundation';
-            const excludedDirectories = new Set(['.git', '.github', 'node_modules', 'dist']);
-            const excludedFiles = new Set(['validation.log']);
+            const excludedDirectories = new Set([
+              '.git',
+              '.github',
+              '.bootstrap',
+              '.bootstrap-fix',
+              '.bootstrap-patch',
+              'node_modules',
+              'dist',
+            ]);
+            const excludedFiles = new Set(['validation.log', 'reconstruct.log']);
             function walk(directory) {
               const files = [];
               for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -149,10 +82,19 @@ jobs:
             for (const absolute of files) {
               const relative = path.relative(root, absolute).split(path.sep).join('/');
               const content = fs.readFileSync(absolute).toString('base64');
-              const { data: blob } = await github.rest.git.createBlob({ owner, repo, content, encoding: 'base64' });
+              const { data: blob } = await github.rest.git.createBlob({
+                owner,
+                repo,
+                content,
+                encoding: 'base64',
+              });
               tree.push({ path: relative, mode: '100644', type: 'blob', sha: blob.sha });
             }
-            const { data: ref } = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+            const { data: ref } = await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: `heads/${branch}`,
+            });
             const { data: createdTree } = await github.rest.git.createTree({ owner, repo, tree });
             const { data: commit } = await github.rest.git.createCommit({
               owner,
@@ -161,8 +103,14 @@ jobs:
               tree: createdTree.sha,
               parents: [ref.object.sha],
             });
-            await github.rest.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.sha, force: false });
-            core.notice(`Published validated source commit ${commit.sha}`);
+            await github.rest.git.updateRef({
+              owner,
+              repo,
+              ref: `heads/${branch}`,
+              sha: commit.sha,
+              force: false,
+            });
+            core.notice(`Published validated source commit ${commit.sha} with ${tree.length} files`);
 
       - uses: actions/upload-artifact@v4
         if: always()
