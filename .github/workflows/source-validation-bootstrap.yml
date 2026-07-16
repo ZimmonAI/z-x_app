@@ -23,6 +23,7 @@ jobs:
       - name: Reconstruct source bundle
         shell: bash
         run: |
+          exec > >(tee reconstruct.log) 2>&1
           set -euxo pipefail
           python3 - <<'PY'
           import base64
@@ -59,12 +60,21 @@ jobs:
           rm -rf .bootstrap .bootstrap-fix .bootstrap-patch /tmp/zx-source.tar.gz /tmp/zx-fix.tar.gz
 
       - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reconstruction-diagnostics-${{ github.run_attempt }}
+          path: reconstruct.log
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: reconstructed-source-${{ github.run_attempt }}
           path: |
             .
             !.git/**
             !.github/**
+            !reconstruct.log
           include-hidden-files: true
 
   validate:
