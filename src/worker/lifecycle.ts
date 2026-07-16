@@ -33,16 +33,16 @@ export async function executeFixturePath(
       capacity,
       executionId,
       signal,
-      completeMedia: async (mime) => {
-        const auth = await deps.storage.createOutputAuthorization(
-          { executionId, mimeType: mime },
+      completeMedia: async (mimeType) => {
+        const authorization = await deps.storage.createOutputAuthorization(
+          { executionId, mimeType },
           signal,
         );
         return deps.storage.completeOrIngestOutput(
           {
-            authorizationRef: auth.authorizationRef,
+            authorizationRef: authorization.authorizationRef,
             safeProviderOutputRef: 'provider-output-fixture-0001',
-            mimeType: mime,
+            mimeType,
           },
           signal,
         );
