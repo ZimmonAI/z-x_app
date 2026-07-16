@@ -23,7 +23,7 @@ export function createAuthVerifier(config: Config): AuthVerifier {
     const ownerApp = String(payload.owner_app ?? '');
     const scope = typeof payload.scope === 'string' ? payload.scope.split(' ') : [];
     if (!ownerApp) throw new Error('owner_app missing');
-    return { ownerApp, scopes: new Set(scope), payload };
+    return { ownerApp, scopes: new Set(scope.filter(Boolean)), payload };
   };
 }
 
@@ -32,10 +32,14 @@ export async function authenticate(
   verify: AuthVerifier,
 ): Promise<Principal> {
   const authorization = request.headers.authorization;
-  if (!authorization?.startsWith('Bearer ')) {
+  if (!authorization?.startsWith('Bearer ') || authorization.length <= 7) {
     throw Object.assign(new Error('unauthorized'), { statusCode: 401 });
   }
-  return verify(authorization.slice(7));
+  try {
+    return await verify(authorization.slice(7));
+  } catch {
+    throw Object.assign(new Error('unauthorized'), { statusCode: 401 });
+  }
 }
 
 export function requireScope(principal: Principal, scope: string): void {
