@@ -1,0 +1,2 @@
+import type { ExecutionAdapter } from './types.js';import { validateGeneratedMedia } from '../validation/output.js';
+export const sceneVideoGenerateAdapter:ExecutionAdapter={operation:'scene_video.generate.v1',id:'scene-video-generate-v1',version:'1.0.0',async execute({completeMedia}){const media=await completeMedia('video/mp4');validateGeneratedMedia('video',{...media,width:media.width??1024,height:media.height??1024,durationSeconds:media.durationSeconds??5});return{media,safeProviderOutputRef:'provider-output-fixture-0001'}}};

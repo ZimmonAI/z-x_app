@@ -1,0 +1,2 @@
+import type { ExecutionAdapter } from './types.js';import { validatePrompt } from '../validation/output.js';
+export const sceneVideoPromptPrepareAdapter:ExecutionAdapter={operation:'scene_video_prompt.prepare.v1',id:'scene-video-prompt-prepare-v1',version:'1.0.0',async execute({request}){const scene=String(request.safeScalarInputs.scene??'scene');const image=request.frozenInputResources[0]?.resourceId??'selected-image';return{promptText:validatePrompt(`Animate ${image}: ${scene}`)}}};

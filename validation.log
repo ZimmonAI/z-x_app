@@ -1,0 +1,10 @@
+
+> @zimspace/z-x-execution-runner@0.1.0 validate
+> npm run typecheck && npm run lint && npm run test:unit && npm run test:contract && npm run test:integration && npm run test:failure && npm run build && npm run db:migrate && npm run db:rollback && npm run package:validate && npm run manifest:validate
+
+
+> @zimspace/z-x-execution-runner@0.1.0 typecheck
+> tsc -p tsconfig.json --noEmit
+
+src/worker/lifecycle.ts(2,861): error TS1005: ',' expected.
+src/worker/lifecycle.ts(3,1): error TS1472: 'catch' or 'finally' expected.

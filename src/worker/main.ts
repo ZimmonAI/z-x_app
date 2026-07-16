@@ -1,0 +1,2 @@
+import { loadConfig } from '../config.js';import { createPool } from '../persistence/pool.js';import { claimNext } from './claim.js';
+const config=loadConfig();if(!config.ZX_DATABASE_URL)throw new Error('ZX_DATABASE_URL required to start worker');const pool=createPool(config.ZX_DATABASE_URL);let stopping=false;process.once('SIGTERM',()=>{stopping=true});while(!stopping){await claimNext(pool,config.ZX_WORKER_ID,config.ZX_WORKER_LEASE_SECONDS);await new Promise(r=>setTimeout(r,1000+Math.floor(Math.random()*251)))}await pool.end();

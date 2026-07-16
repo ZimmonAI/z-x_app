@@ -1,0 +1,60 @@
+{
+  "name": "@zimspace/z-x-execution-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fixture-first governed Z-X execution runner foundation.",
+  "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "packageManager": "npm@10.9.2",
+  "main": "dist/api/main.js",
+  "exports": {
+    "./contracts/v1": "./dist/contracts/v1/execution.js"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "fixtures",
+    "docs",
+    "zimspace.app.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:contract": "vitest run tests/contract",
+    "test:integration": "vitest run tests/integration",
+    "test:failure": "vitest run tests/failure",
+    "validate": "npm run typecheck && npm run lint && npm run test:unit && npm run test:contract && npm run test:integration && npm run test:failure && npm run build && npm run db:migrate && npm run db:rollback && npm run package:validate && npm run manifest:validate",
+    "dev:api": "npm run build && node --enable-source-maps dist/api/main.js",
+    "dev:worker": "npm run build && node --enable-source-maps dist/worker/main.js",
+    "start:api": "node --enable-source-maps dist/api/main.js",
+    "start:worker": "node --enable-source-maps dist/worker/main.js",
+    "db:migrate": "node --input-type=module -e \"import pg from 'pg';import fs from 'node:fs/promises';const u=process.env.ZX_TEST_DATABASE_URL;if(!u)throw new Error('ZX_TEST_DATABASE_URL required');const c=new pg.Client({connectionString:u});await c.connect();await c.query(await fs.readFile('migrations/0001_execution_foundation_up.sql','utf8'));await c.end();\"",
+    "db:rollback": "node --input-type=module -e \"import pg from 'pg';import fs from 'node:fs/promises';const u=process.env.ZX_TEST_DATABASE_URL;if(!u)throw new Error('ZX_TEST_DATABASE_URL required');const c=new pg.Client({connectionString:u});await c.connect();await c.query(await fs.readFile('migrations/0001_execution_foundation_down.sql','utf8'));await c.end();\"",
+    "package:validate": "node --input-type=module -e \"import p from './package.json' with {type:'json'};if(p.name!=='@zimspace/z-x-execution-runner'||p.type!=='module'||p.engines.node!=='>=22 <23')process.exit(1);for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies})){if(!/^\\d+\\.\\d+\\.\\d+/.test(v))throw new Error('dependency not exact: '+n+'='+v)}\"",
+    "manifest:validate": "node --input-type=module -e \"import m from './zimspace.app.json' with {type:'json'};if(m.schemaVersion!==1||m.project.id!=='z-x'||m.project.apps.length!==2||m.project.apps.some(a=>a.port!==null||a.healthCheckUrl!==null||a.actionsEnabled!==false))process.exit(1)\""
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "fastify": "5.10.0",
+    "jose": "6.2.3",
+    "pg": "8.22.0",
+    "pino": "10.3.1",
+    "prom-client": "15.1.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.1",
+    "@types/pg": "8.20.0",
+    "eslint": "10.7.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.64.0",
+    "vitest": "4.1.10"
+  }
+}

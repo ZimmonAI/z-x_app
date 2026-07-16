@@ -1,0 +1,1 @@
+import { loadConfig } from '../../src/config.js';test('defaults safely and fails closed for real dependencies',()=>{const c=loadConfig({});expect(c.ZX_API_PORT).toBeUndefined();expect(c.ZX_FEATURE_REAL_DEPENDENCIES_ENABLED).toBe(false);expect(()=>loadConfig({ZX_FEATURE_REAL_DEPENDENCIES_ENABLED:'true'})).toThrow(/required/)})

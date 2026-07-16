@@ -1,0 +1,1 @@
+import type { FastifyInstance } from 'fastify';export async function readinessRoutes(app:FastifyInstance,opts:{ready:()=>Promise<boolean>}){app.get('/internal/readiness',async(_r,reply)=>(await opts.ready())?{status:'ready'}:reply.code(503).send({status:'not-ready'}))}

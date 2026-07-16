@@ -1,0 +1,2 @@
+import type { ExecutionAdapter } from './types.js';import { validatePrompt } from '../validation/output.js';
+export const imagePromptPrepareAdapter:ExecutionAdapter={operation:'image_prompt.prepare.v1',id:'image-prompt-prepare-v1',version:'1.0.0',async execute({request}){const scene=String(request.safeScalarInputs.scene??'scene');const style=String(request.safeScalarInputs.style??'cinematic');return{promptText:validatePrompt(`${style}: ${scene}`)}}};

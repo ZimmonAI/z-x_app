@@ -1,0 +1,2 @@
+import type { ExecutionAdapter } from './types.js';import { validateGeneratedMedia } from '../validation/output.js';
+export const imageGenerateAdapter:ExecutionAdapter={operation:'image.generate.v1',id:'image-generate-v1',version:'1.0.0',async execute({completeMedia}){const media=await completeMedia('image/png');validateGeneratedMedia('image',{...media,width:media.width??1024,height:media.height??1024});return{media,safeProviderOutputRef:'provider-output-fixture-0001'}}};

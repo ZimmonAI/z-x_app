@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "id": "z-x",
+    "name": "Z-X",
+    "description": "Generic governed execution runner for approved Zimspace routes.",
+    "apps": [
+      {
+        "id": "z-x-execution-runner-api",
+        "name": "Z-X Execution API",
+        "description": "Authenticated internal execution submission and status API.",
+        "type": "fastify",
+        "role": "main",
+        "workingDir": ".",
+        "startCommand": "npm run start:api",
+        "port": null,
+        "healthCheckUrl": null,
+        "localUrl": null,
+        "publicUrl": null,
+        "isGateway": false,
+        "autoStartWith": [
+          "z-x"
+        ],
+        "actionsEnabled": false,
+        "includeInGitSync": true
+      },
+      {
+        "id": "z-x-execution-runner-worker",
+        "name": "Z-X Execution Worker",
+        "description": "Durable worker for Z-X execution attempts.",
+        "type": "service",
+        "role": "support",
+        "workingDir": ".",
+        "startCommand": "npm run start:worker",
+        "port": null,
+        "healthCheckUrl": null,
+        "localUrl": null,
+        "publicUrl": null,
+        "isGateway": false,
+        "autoStartWith": [
+          "z-x"
+        ],
+        "parentAppId": "z-x-execution-runner-api",
+        "actionsEnabled": false,
+        "includeInGitSync": true
+      }
+    ]
+  }
+}

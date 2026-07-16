@@ -1,0 +1,6 @@
+import { createRemoteJWKSet,jwtVerify,type JWTPayload } from 'jose';import type { FastifyRequest } from 'fastify';import type { Config } from '../config.js';
+export interface Principal{ownerApp:string;scopes:Set<string>;payload:JWTPayload}
+export type AuthVerifier=(token:string)=>Promise<Principal>;
+export function createAuthVerifier(c:Config):AuthVerifier{if(!c.ZX_API_AUTH_ISSUER||!c.ZX_API_AUTH_AUDIENCE||!c.ZX_API_AUTH_JWKS_URL)throw new Error('JWT issuer, audience, and JWKS required');const jwks=createRemoteJWKSet(new URL(c.ZX_API_AUTH_JWKS_URL));return async token=>{const {payload}=await jwtVerify(token,jwks,{issuer:c.ZX_API_AUTH_ISSUER,audience:c.ZX_API_AUTH_AUDIENCE});const ownerApp=String(payload.owner_app??'');const scope=typeof payload.scope==='string'?payload.scope.split(' '):[];if(!ownerApp)throw new Error('owner_app missing');return{ownerApp,scopes:new Set(scope),payload}}}
+export async function authenticate(req:FastifyRequest,verify:AuthVerifier):Promise<Principal>{const h=req.headers.authorization;if(!h?.startsWith('Bearer '))throw Object.assign(new Error('unauthorized'),{statusCode:401});return verify(h.slice(7))}
+export function requireScope(p:Principal,scope:string):void{if(!p.scopes.has(scope))throw Object.assign(new Error('forbidden'),{statusCode:403})}
