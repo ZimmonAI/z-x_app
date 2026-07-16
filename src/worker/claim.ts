@@ -1,13 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
+import type { OperationType } from '../contracts/v1/execution.js';
 import { withTransaction } from '../persistence/transaction.js';
 import type { ClaimedExecution } from './lifecycle.js';
+
+const ALL_OPERATIONS: OperationType[] = [
+  'image_prompt.prepare.v1',
+  'image.generate.v1',
+  'scene_video_prompt.prepare.v1',
+  'scene_video.generate.v1',
+];
 
 export async function claimNext(
   pool: pg.Pool,
   workerId: string,
   leaseSeconds = 60,
+  enabledOperations: readonly OperationType[] = ALL_OPERATIONS,
 ): Promise<ClaimedExecution | null> {
+  if (enabledOperations.length === 0) return null;
   return withTransaction(pool, async (client) => {
     const selected = await client.query<{
       execution_id: string;
@@ -20,11 +30,13 @@ export async function claimNext(
          join execution.execution_attempts a
            on a.execution_id=e.id and a.attempt_number=e.current_attempt_number
         where e.status='queued' and a.status='queued'
+          and r.operation_type=any($1::text[])
           and a.route_snapshot is not null and a.capacity_snapshot is not null
           and (a.lease_expires_at is null or a.lease_expires_at<=now())
         order by e.priority desc, e.created_at asc, e.id asc
         for update of e, a skip locked
         limit 1`,
+      [enabledOperations],
     );
     const row = selected.rows[0];
     if (!row) return null;
