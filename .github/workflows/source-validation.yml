@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/implement-z-x-execution-runner-foundation
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
