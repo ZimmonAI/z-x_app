@@ -8,6 +8,26 @@
   },
   "apps": [
     {
+      "id": "z-x-fixture-auth",
+      "name": "Z-X Fixture Auth",
+      "description": "Private fixture-only ES256 authority for the governed deployment canary.",
+      "type": "fastify",
+      "role": "infrastructure",
+      "workingDir": ".",
+      "startCommand": "npm run start:auth-fixture",
+      "port": null,
+      "healthCheckUrl": null,
+      "localUrl": null,
+      "publicUrl": null,
+      "isGateway": false,
+      "autoStartWith": [
+        "z-x"
+      ],
+      "actionsEnabled": false,
+      "includeInGitSync": true,
+      "sortOrder": 5
+    },
+    {
       "id": "z-x-execution-runner-api",
       "name": "Z-X Execution API",
       "description": "Authenticated internal execution submission and status API.",
@@ -22,6 +42,9 @@
       "isGateway": false,
       "autoStartWith": [
         "z-x"
+      ],
+      "dependsOn": [
+        "z-x-fixture-auth"
       ],
       "actionsEnabled": false,
       "includeInGitSync": true,
