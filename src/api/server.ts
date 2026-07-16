@@ -51,7 +51,11 @@ export async function buildServer(options: {
   });
 
   app.addHook('onSend', async (_request, _reply, payload) => {
-    if (payload !== null && Buffer.byteLength(payload) > MAX_RESPONSE_BYTES) {
+    const responseBytes =
+      typeof payload === 'string' || Buffer.isBuffer(payload)
+        ? Buffer.byteLength(payload)
+        : 0;
+    if (responseBytes > MAX_RESPONSE_BYTES) {
       throw Object.assign(new Error('response exceeds 512 KiB'), { statusCode: 500 });
     }
     return payload;
