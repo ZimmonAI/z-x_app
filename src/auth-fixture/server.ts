@@ -7,7 +7,6 @@ export function buildFixtureAuthServer(config: FixtureAuthRuntimeConfig) {
     logger: false,
     bodyLimit: 1_024,
     exposeHeadRoutes: false,
-    disableRequestLogging: true,
   });
 
   app.get(FIXTURE_AUTH_HEALTH_PATH, async (_request, reply) => {
