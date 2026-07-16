@@ -8,6 +8,11 @@ import type { OperationType } from '../contracts/v1/execution.js';
 import { createLogger } from '../observability/logger.js';
 import { createPool } from '../persistence/pool.js';
 import { claimNext } from './claim.js';
+import {
+  observeWorkerStopRequest,
+  writeWorkerStopAcknowledgement,
+  type WorkerStopRequest,
+} from './control.js';
 import { startHeartbeatLoop } from './heartbeat.js';
 import {
   completeClaimedExecution,
@@ -67,11 +72,29 @@ const dependencies: FixtureDependencies = {
 
 const abortControllers = new Set<AbortController>();
 let lastRecoveryAt = 0;
+let controlRequest: WorkerStopRequest | undefined;
+let shutdownStartedAt: string | undefined;
 
 function beginShutdown(): void {
   if (shutdown.isStopping) return;
   shutdown.begin();
+  shutdownStartedAt = new Date().toISOString();
   logger.info({ state: 'draining' }, 'worker shutdown started');
+}
+
+async function observeControlRequest(): Promise<void> {
+  if (!config.ZX_WORKER_CONTROL_DIR || controlRequest || shutdown.isStopping) return;
+  try {
+    controlRequest = await observeWorkerStopRequest(
+      config.ZX_WORKER_CONTROL_DIR,
+      beginShutdown,
+    );
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : 'unknown worker control failure' },
+      'worker control request ignored safely',
+    );
+  }
 }
 
 process.once('SIGTERM', beginShutdown);
@@ -82,6 +105,8 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 while (!shutdown.isStopping) {
+  await observeControlRequest();
+  if (shutdown.isStopping) break;
   let progressed = false;
 
   if (enabledOperations.size > 0) {
@@ -148,7 +173,8 @@ while (!shutdown.isStopping) {
   }
 
   if (!progressed) {
-    await delay(1_000 + Math.floor(Math.random() * 251));
+    await observeControlRequest();
+    if (!shutdown.isStopping) await delay(1_000 + Math.floor(Math.random() * 251));
   }
 }
 
@@ -161,3 +187,13 @@ if (!drained) {
   logger.error({ state: 'drain-timeout' }, 'worker shutdown drain timed out');
 }
 await pool.end();
+
+if (controlRequest && config.ZX_WORKER_CONTROL_DIR && shutdownStartedAt) {
+  await writeWorkerStopAcknowledgement(config.ZX_WORKER_CONTROL_DIR, {
+    requestId: controlRequest.requestId,
+    result: drained ? 'drained' : 'drain-timeout',
+    requestedAt: controlRequest.requestedAt,
+    shutdownStartedAt,
+    acknowledgedAt: new Date().toISOString(),
+  });
+}
