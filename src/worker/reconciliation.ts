@@ -11,7 +11,6 @@ interface ManualRetryClaim {
   executionId: string;
   attemptId: string;
   caseId: string;
-  fromStatus: 'failed' | 'timed-out';
   leaseToken: string;
   request: ExecutionRequestV1;
 }
@@ -37,11 +36,10 @@ async function claimManualRetry(
       execution_id: string;
       attempt_id: string;
       case_id: string;
-      status: 'failed' | 'timed-out';
       request_envelope: unknown;
     }>(
       `select e.id as execution_id, a.id as attempt_id, c.id as case_id,
-              e.status, r.request_envelope
+              r.request_envelope
          from execution.executions e
          join execution.execution_requests r on r.id=e.request_id
          join execution.execution_attempts a
@@ -49,7 +47,8 @@ async function claimManualRetry(
          join execution.execution_reconciliation_cases c
            on c.execution_id=e.id and c.attempt_id=a.id
           and c.case_type='manual-retry' and c.status='open'
-        where e.status in ('failed','timed-out') and a.status='created'
+        where e.status='queued' and a.status='queued'
+          and a.route_snapshot is null and a.capacity_snapshot is null
           and (a.lease_expires_at is null or a.lease_expires_at<=now())
         order by c.detected_at asc, e.created_at asc, e.id asc
         for update of e, a, c skip locked
@@ -64,7 +63,8 @@ async function claimManualRetry(
           set status='resolving-route', worker_id=$2, lease_token=$3,
               lease_expires_at=now()+make_interval(secs=>$4),
               heartbeat_at=now(), updated_at=now()
-        where id=$1 and status='created'
+        where id=$1 and status='queued'
+          and route_snapshot is null and capacity_snapshot is null
         returning id`,
       [row.attempt_id, workerId, leaseToken, leaseSeconds],
     );
@@ -74,7 +74,6 @@ async function claimManualRetry(
       executionId: row.execution_id,
       attemptId: row.attempt_id,
       caseId: row.case_id,
-      fromStatus: row.status,
       leaseToken,
       request: validateExecutionRequest(row.request_envelope),
     };
@@ -122,13 +121,12 @@ export async function prepareManualRetry(
 
       const execution = await client.query(
         `update execution.executions
-            set status='queued', error_envelope=null, terminal_at=null,
-                lock_version=lock_version+1, updated_at=now()
-          where id=$1 and status=$2
+            set lock_version=lock_version+1, updated_at=now()
+          where id=$1 and status='queued'
           returning id`,
-        [claim.executionId, claim.fromStatus],
+        [claim.executionId],
       );
-      if (!execution.rowCount) throw new Error('manual retry source state changed');
+      if (!execution.rowCount) throw new Error('manual retry queue state changed');
 
       await client.query(
         `update execution.execution_reconciliation_cases
@@ -144,40 +142,22 @@ export async function prepareManualRetry(
           },
         ],
       );
-      await client.query(
-        `insert into execution.execution_status_transitions
-          (event_key, execution_id, attempt_id, from_status, to_status,
-           reason_family, actor_type, actor_ref, trace_id, safe_metadata)
-         values ($1,$2,$3,$4,'queued','manual-retry','worker',$5,$6,$7)`,
-        [
-          randomUUID(),
-          claim.executionId,
-          claim.attemptId,
-          claim.fromStatus,
-          workerId,
-          claim.request.traceId,
-          { routeId: route.routeId, routeVersion: route.routeVersion },
-        ],
-      );
     });
     return true;
   } catch (error) {
     const failure = toSafeError(error, claim.request.traceId);
-    const retryCapacity = failure.family === 'no-eligible-capacity';
     await withTransaction(pool, async (client) => {
       const attempt = await client.query(
         `update execution.execution_attempts
-            set status=$4, error_family=$5, error_code=$6, error_message=$7,
-                completed_at=case when $4='failed' then now() else null end,
-                worker_id=null, lease_token=null, lease_expires_at=null,
-                heartbeat_at=null, updated_at=now()
+            set status='queued', error_family=$4, error_code=$5, error_message=$6,
+                completed_at=null, worker_id=null, lease_token=null,
+                lease_expires_at=null, heartbeat_at=null, updated_at=now()
           where id=$1 and execution_id=$2 and lease_token=$3
           returning id`,
         [
           claim.attemptId,
           claim.executionId,
           claim.leaseToken,
-          retryCapacity ? 'created' : 'failed',
           failure.family,
           failure.code,
           failure.message,
@@ -194,7 +174,7 @@ export async function prepareManualRetry(
           claim.caseId,
           failure.family,
           { code: failure.code, retryable: failure.retryable },
-          retryCapacity,
+          failure.retryable,
         ],
       );
     });
