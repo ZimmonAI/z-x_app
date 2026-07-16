@@ -3,6 +3,7 @@ import { ZAccountFixtureV1 } from '../../fixtures/v1/z-account.js';
 import { ZProviderFixtureV1 } from '../../fixtures/v1/z-provider.js';
 import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';
 import { loadConfig } from '../config.js';
+import { SafeExecutionError } from '../contracts/v1/error.js';
 import type { OperationType } from '../contracts/v1/execution.js';
 import { createLogger } from '../observability/logger.js';
 import { createPool } from '../persistence/pool.js';
@@ -37,12 +38,29 @@ if (config.ZX_FEATURE_SCENE_VIDEO_PROMPT_PREPARE_ENABLED) {
 if (config.ZX_FEATURE_SCENE_VIDEO_GENERATE_ENABLED) {
   enabledOperations.add('scene_video.generate.v1');
 }
+const enabledOperationList = [...enabledOperations];
 
 const logger = createLogger(config.ZX_LOG_LEVEL);
 const pool = createPool(config.ZX_DATABASE_URL);
 const shutdown = new ShutdownController();
+const routeFixture = new ZProviderFixtureV1();
 const dependencies: FixtureDependencies = {
-  routes: new ZProviderFixtureV1(),
+  routes: {
+    fixtureVersion: 'fixture-v1',
+    async resolveAndValidateRoute(input, signal) {
+      if (!enabledOperations.has(input.operation)) {
+        throw new SafeExecutionError({
+          family: 'adapter-unavailable',
+          code: 'ZX_OPERATION_DISABLED',
+          message: 'operation is disabled by the worker feature gate',
+          retryable: false,
+          details: { operation: input.operation },
+          traceId: 'worker-feature-gate',
+        });
+      }
+      return routeFixture.resolveAndValidateRoute(input, signal);
+    },
+  },
   capacity: new ZAccountFixtureV1(),
   autoHub: new AutoHubFixtureV1(),
   storage: new ZStorageFixtureV1(),
@@ -81,6 +99,7 @@ while (!shutdown.isStopping) {
       pool,
       config.ZX_WORKER_ID,
       config.ZX_WORKER_LEASE_SECONDS,
+      enabledOperationList,
     );
     if (!claim) break;
     progressed = true;
