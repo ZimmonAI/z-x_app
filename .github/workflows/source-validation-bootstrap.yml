@@ -37,11 +37,29 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Reconstruct source bundle
+        shell: bash
         run: |
-          cat .bootstrap/source.part-* | base64 --decode > /tmp/zx-source.tar.gz
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          from pathlib import Path
+
+          source_parts = sorted(Path('.bootstrap').glob('source.part-*'))
+          if len(source_parts) != 8:
+              raise SystemExit(f'expected 8 source parts, found {len(source_parts)}')
+          source_encoded = ''.join(part.read_text(encoding='utf-8') for part in source_parts)
+          Path('/tmp/zx-source.tar.gz').write_bytes(base64.b64decode(source_encoded, validate=True))
+
+          patch_path = Path('.bootstrap-fix/source.patch.b64')
+          patch_encoded = patch_path.read_text(encoding='utf-8')
+          Path('/tmp/zx-fix.tar.gz').write_bytes(base64.b64decode(patch_encoded, validate=True))
+          PY
+          gzip -t /tmp/zx-source.tar.gz
+          gzip -t /tmp/zx-fix.tar.gz
           tar -xzf /tmp/zx-source.tar.gz -C .
-          base64 --decode .bootstrap-fix/source.patch.b64 > /tmp/zx-fix.tar.gz
           tar -xzf /tmp/zx-fix.tar.gz -C .
+          test -f package.json
+          test -f src/worker/lifecycle.ts
           rm -rf .bootstrap .bootstrap-fix .bootstrap-patch /tmp/zx-source.tar.gz /tmp/zx-fix.tar.gz
 
       - uses: actions/setup-node@v4
