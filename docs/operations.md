@@ -1,5 +1,11 @@
 # Operations
 
-No operational start has been executed. Before any future runtime action, a separate authorized handoff must assign a governed port, supply an approved secret/config route, create/apply the `z_x.execution` migration on the authorized target only, verify comments and least privilege, and validate readiness.
+No operational start, key provisioning, port assignment, database action, or canary has been executed by this source task. The manifest keeps all three runtime ports and URLs `null`, leaves every action disabled, and records the API dependency on the fixture authority.
 
-Future order: migration, API readiness, worker with real dependencies disabled, one-operation canary, owner canary. Monitor backlog age, lease loss, reconciliation cases, safe internal failures, storage completion, and delivery retries. Real dependencies and operation flags are enabled one family at a time; `ZX_CANARY_PERCENT` starts at 0.
+A later authorized registration handoff may provide the nine `ZX_FIXTURE_AUTH_*` variables and `ZX_WORKER_CONTROL_DIR` through its approved secret/config lane. The fixture env utility is `scripts/provision-fixture-auth.mjs`; it requires a caller-provided env path and registered port, refuses overwrite unless `--replace` is explicit, generates one P-256 key pair, and prints only the path, `ES256`, and public fingerprint. It must not be used to populate API, database, worker, provider, browser, or storage values.
+
+The token client is `npm run fixture-auth:mint`. It requires `--env-file`, exact `--owner-app z-x-deployment-canary`, one or more repeated allowlisted `--scope` values, and `--output-file`. It writes the JWT only to the output file, enforces the configured issuer and audience, and refuses unknown scopes, empty owner, malformed key configuration, or TTL above 300 seconds.
+
+The worker control command is `npm run worker:request-stop`. `ZX_WORKER_CONTROL_DIR` contains runtime-only `stop.request.json` and `stop.ack.json` files. The worker checks for a request during each idle loop, invokes its existing shutdown controller, stops claiming work, allows active work to finish for up to 30 seconds, closes the pool, and acknowledges the matching request. The command waits up to 35 seconds, removes the acknowledgement after reading it, and exits nonzero on timeout or `drain-timeout`.
+
+Future runtime order remains separately governed: register unresolved ports and secret bindings, start fixture auth before the API, start the worker as API support, prove readiness, and only then authorize a bounded fixture canary. Real dependencies and callbacks remain disabled.
