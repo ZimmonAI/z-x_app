@@ -34,10 +34,10 @@ jobs:
               print(f'{path}: {len(value)} base64 characters')
               return value
 
-          source_parts = sorted(Path('.bootstrap').glob('source.part-*'))
+          source_parts = sorted(Path('.bootstrap-patch').glob('source.part-*'))
           print('source parts:', [part.name for part in source_parts])
-          if len(source_parts) != 8:
-              raise SystemExit(f'expected 8 source parts, found {len(source_parts)}')
+          if len(source_parts) != 2:
+              raise SystemExit(f'expected 2 source parts, found {len(source_parts)}')
           source_encoded = ''.join(normalized_text(part) for part in source_parts)
           source_bytes = base64.b64decode(source_encoded)
           print('source archive bytes:', len(source_bytes), source_bytes[:4].hex())
