@@ -12,6 +12,9 @@ import { mintFixtureToken } from '../../src/auth-fixture/mint.js';
 import { loadConfig } from '../../src/config.js';
 import { parseStatusCompatibleEnvironmentFile } from './auth-fixture-helper.js';
 
+const DOCUMENTED_PROVISION_COMMAND =
+  'node -- scripts/provision-fixture-auth.mjs --env-file <exact-path> --port <registered-port> --bind-host 127.0.0.1';
+
 const EXPECTED_FIXTURE_AUTH_KEYS = [
   'ZX_FIXTURE_AUTH_ALGORITHM',
   'ZX_FIXTURE_AUTH_AUDIENCE',
@@ -41,6 +44,19 @@ function runProvision(arguments_: string[]) {
     child.on('close', (code) => resolve({ code, stdout, stderr }));
   });
 }
+
+test('documented fixture auth provisioning syntax matches the Node 22-safe invocation', async () => {
+  const [readme, operations] = await Promise.all([
+    readFile('README.md', 'utf8'),
+    readFile('docs/operations.md', 'utf8'),
+  ]);
+  for (const document of [readme, operations]) {
+    expect(document).toContain(DOCUMENTED_PROVISION_COMMAND);
+    expect(document).not.toContain(
+      'node scripts/provision-fixture-auth.mjs --env-file <exact-path>',
+    );
+  }
+});
 
 test('provision utility emits Status-compatible fixture auth configuration without disclosure', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'zx-fixture-auth-'));
