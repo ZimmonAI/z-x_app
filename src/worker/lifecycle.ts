@@ -40,6 +40,11 @@ interface PreparationClaim {
   route?: RouteSnapshotV1;
 }
 
+interface AttemptProviderOutputRecord {
+  externalRunRef?: string;
+  safeProviderOutputRef: string;
+}
+
 function toSafeError(error: unknown, traceId: string): SafeErrorV1 {
   if (error instanceof SafeExecutionError) return error.safe;
   return {
@@ -85,6 +90,103 @@ async function appendTransition(
   );
 }
 
+async function recordProviderOutputForClaim(
+  pool: pg.Pool,
+  claim: ClaimedExecution,
+  input: AttemptProviderOutputRecord,
+): Promise<void> {
+  await withTransaction(pool, async (client) => {
+    const selected = await client.query<{
+      external_run_ref: string | null;
+      safe_provider_output_ref: string | null;
+    }>(
+      `select external_run_ref, safe_provider_output_ref
+         from execution.execution_attempts
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'
+        for update`,
+      [claim.attemptId, claim.executionId, claim.leaseToken],
+    );
+    const row = selected.rows[0];
+    if (!row) throw new Error('lease lost before provider output persistence');
+    if (
+      row.safe_provider_output_ref !== null &&
+      row.safe_provider_output_ref !== input.safeProviderOutputRef
+    ) {
+      throw new SafeExecutionError({
+        family: 'reconciliation-required',
+        code: 'ZX_PROVIDER_OUTPUT_REF_CONFLICT',
+        message: 'provider output reference replacement was rejected',
+        retryable: false,
+        traceId: 'internal',
+      });
+    }
+    if (
+      input.externalRunRef !== undefined &&
+      row.external_run_ref !== null &&
+      row.external_run_ref !== input.externalRunRef
+    ) {
+      throw new SafeExecutionError({
+        family: 'reconciliation-required',
+        code: 'ZX_EXTERNAL_RUN_REF_CONFLICT',
+        message: 'external run reference replacement was rejected',
+        retryable: false,
+        traceId: 'internal',
+      });
+    }
+    await client.query(
+      `update execution.execution_attempts
+          set external_run_ref=coalesce(external_run_ref,$4),
+              safe_provider_output_ref=coalesce(safe_provider_output_ref,$5),
+              updated_at=now()
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'`,
+      [
+        claim.attemptId,
+        claim.executionId,
+        claim.leaseToken,
+        input.externalRunRef ?? null,
+        input.safeProviderOutputRef,
+      ],
+    );
+  });
+}
+
+async function recordOutputAuthorizationForClaim(
+  pool: pg.Pool,
+  claim: ClaimedExecution,
+  authorizationRef: string,
+): Promise<void> {
+  await withTransaction(pool, async (client) => {
+    const selected = await client.query<{ output_authorization_ref: string | null }>(
+      `select output_authorization_ref
+         from execution.execution_attempts
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'
+        for update`,
+      [claim.attemptId, claim.executionId, claim.leaseToken],
+    );
+    const row = selected.rows[0];
+    if (!row) throw new Error('lease lost before output authorization persistence');
+    if (row.output_authorization_ref !== null && row.output_authorization_ref !== authorizationRef) {
+      throw new SafeExecutionError({
+        family: 'reconciliation-required',
+        code: 'ZX_OUTPUT_AUTHORIZATION_REF_CONFLICT',
+        message: 'output authorization reference replacement was rejected',
+        retryable: false,
+        traceId: 'internal',
+      });
+    }
+    await client.query(
+      `update execution.execution_attempts
+          set output_authorization_ref=coalesce(output_authorization_ref,$4), updated_at=now()
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'`,
+      [claim.attemptId, claim.executionId, claim.leaseToken, authorizationRef],
+    );
+  });
+}
+
 export async function executePreparedFixturePath(
   request: ExecutionRequestV1,
   executionId: string,
@@ -92,6 +194,11 @@ export async function executePreparedFixturePath(
   capacity: CapacitySnapshotV1,
   dependencies: FixtureDependencies,
   signal = new AbortController().signal,
+  persistence?: {
+    attemptId: string;
+    recordProviderOutput(input: AttemptProviderOutputRecord): Promise<void>;
+    recordOutputAuthorization(authorizationRef: string): Promise<void>;
+  },
 ): Promise<AdapterOutput> {
   const adapter = getAdapter(
     request.operationType,
@@ -104,9 +211,12 @@ export async function executePreparedFixturePath(
     route,
     capacity,
     executionId,
+    attemptId: persistence?.attemptId ?? executionId,
     signal,
     autoHub: dependencies.autoHub,
     storage: dependencies.storage,
+    recordProviderOutput: persistence?.recordProviderOutput ?? (async () => {}),
+    recordOutputAuthorization: persistence?.recordOutputAuthorization ?? (async () => {}),
   });
 }
 
@@ -139,6 +249,12 @@ export async function executeFixturePath(
       capacity,
       dependencies,
       signal,
+      {
+        attemptId: claim.attemptId,
+        recordProviderOutput: (input) => recordProviderOutputForClaim(pool, claim, input),
+        recordOutputAuthorization: (authorizationRef) =>
+          recordOutputAuthorizationForClaim(pool, claim, authorizationRef),
+      },
     );
     outcome = 'succeeded';
     return result;

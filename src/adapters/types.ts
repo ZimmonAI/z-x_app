@@ -31,9 +31,15 @@ export interface AdapterContext {
   route: RouteSnapshotV1;
   capacity: CapacitySnapshotV1;
   executionId: string;
+  attemptId: string;
   signal: AbortSignal;
   autoHub: AutoHubDispatchClient;
   storage: ZStorageClient;
+  recordProviderOutput(input: {
+    externalRunRef?: string;
+    safeProviderOutputRef: string;
+  }): Promise<void>;
+  recordOutputAuthorization(authorizationRef: string): Promise<void>;
 }
 
 export interface AdapterOutput {
@@ -133,10 +139,36 @@ export async function dispatchAndStoreMedia(
   }
 
   const mimeType = context.request.requestedOutputType;
+  const storageOutput = context.request.storageOutput;
+  const mode = storageOutput?.mode ?? 'post-run-ingest';
+  if (mode === 'direct-write') {
+    throw new SafeExecutionError({
+      family: 'adapter-unavailable',
+      code: 'ZX_DIRECT_WRITE_UNSUPPORTED',
+      message: 'direct-write storage output is not supported by this adapter path',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
+  await context.recordProviderOutput({
+    externalRunRef: run.runRef,
+    safeProviderOutputRef: run.safeOutputRef,
+  });
   const authorization = await context.storage.createOutputAuthorization(
-    { executionId: context.executionId, mimeType, fixtureScenario: scenario },
+    {
+      executionId: context.executionId,
+      attemptId: context.attemptId,
+      mode,
+      artifactKind: storageOutput?.artifactKind ?? kind,
+      acceptedMimeTypes: storageOutput?.acceptedMimeTypes ?? [mimeType],
+      storageProfileRef: storageOutput?.storageProfileRef,
+      maxBytes: storageOutput?.maxBytes,
+      mimeType,
+      fixtureScenario: scenario,
+    },
     context.signal,
   );
+  await context.recordOutputAuthorization(authorization.authorizationRef);
   const media = await context.storage.completeOrIngestOutput(
     {
       authorizationRef: authorization.authorizationRef,

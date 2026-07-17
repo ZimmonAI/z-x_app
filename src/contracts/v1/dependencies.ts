@@ -15,7 +15,7 @@ export interface ReportCapacityOutcomeV1 { leaseRef:string; outcome:string; }
 export interface StartRunV1 { operation:OperationType; adapterId:string; runtimeBindingRef:string; fixtureScenario?:FixtureScenario; }
 export interface GetRunV1 { runRef:string; fixtureScenario?:FixtureScenario; }
 export interface CancelRunV1 { runRef:string; }
-export interface CreateOutputAuthorizationV1 { executionId:string; mimeType:string; fixtureScenario?:FixtureScenario; }
+export interface CreateOutputAuthorizationV1 { executionId:string; attemptId:string; mode:'post-run-ingest'|'direct-write'; artifactKind:'image'|'video'; acceptedMimeTypes:readonly string[]; storageProfileRef?:string; maxBytes?:number; mimeType:string; fixtureScenario?:FixtureScenario; }
 export interface CompleteOutputV1 { authorizationRef:string; safeProviderOutputRef:string; mimeType:string; fixtureScenario?:FixtureScenario; }
 export interface CreateReadGrantV1 { resourceId:string; }
 export interface OwnerDeliveryV1 { executionId:string; result:unknown; fixtureScenario?:FixtureScenario; }
