@@ -17,11 +17,15 @@ The source now defines three disabled, unresolved runtimes: `z-x-fixture-auth`, 
 
 `z-x-fixture-auth` is a private test authority owned by `@zimspace/z-x-execution-runner`; it is not a production identity provider. It serves only `GET /internal/health` and the public ES256 JWKS at `GET /.well-known/jwks.json`. It fails closed unless the exact fixture issuer `urn:zimspace:z-x:fixture-auth`, audience `z-x-execution-runner`, 300-second token limit, key ID, private JWK, and matching public JWKS are supplied through the nine `ZX_FIXTURE_AUTH_*` variables listed in `.env.example`.
 
-The Node-built-in provisioning utility writes key material only to the caller-provided file and never prints private key content:
+The Node-built-in provisioning utility writes exactly those nine variables to the caller-provided file. Every value is one physical line. Scalar values are emitted directly, while the private JWK and public JWKS are compact raw JSON immediately after `=` with no outer quote pair and no escaped JSON quotes. The utility never prints key or JWKS bodies and refuses overwrite unless `--replace` is explicitly supplied for an authorized replacement.
 
-```bash
-node -- scripts/provision-fixture-auth.mjs --env-file <authorized-env-file> --port <registered-port>
+Use this exact loopback-only provisioning command:
+
+```text
+node scripts/provision-fixture-auth.mjs --env-file <exact-path> --port <registered-port> --bind-host 127.0.0.1
 ```
+
+The fixture authority must never bind to `0.0.0.0`. It has no browser, Tailscale, or public URL; its health and JWKS endpoints remain loopback-only.
 
 The mint command requires the exact canary owner `z-x-deployment-canary`, one or more repeated allowlisted `--scope` arguments, and a caller-provided token output file. It writes the token only to that file:
 
