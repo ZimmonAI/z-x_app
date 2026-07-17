@@ -23,10 +23,14 @@ const EXPECTED_VARIABLES = [
 
 function runProvision(arguments_: string[]) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn(process.execPath, ['scripts/provision-fixture-auth.mjs', ...arguments_], {
-      cwd: process.cwd(),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn(
+      process.execPath,
+      ['--', 'scripts/provision-fixture-auth.mjs', ...arguments_],
+      {
+        cwd: process.cwd(),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
