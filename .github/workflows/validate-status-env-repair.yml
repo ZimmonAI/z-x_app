@@ -35,3 +35,11 @@ jobs:
         run: npm ci
       - name: Run exact validation chain
         run: npm run validate
+      - name: Capture machine-readable test evidence
+        run: npm run test -- --reporter=json --outputFile=validation-tests.json
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: status-env-validation-evidence
+          path: validation-tests.json
+          retention-days: 1
