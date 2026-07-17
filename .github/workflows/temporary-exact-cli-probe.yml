@@ -1,0 +1,47 @@
+name: Temporary exact CLI probe
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Probe documented first-time provisioning command
+        run: |
+          set -eu
+          target="$RUNNER_TEMP/zx-fixture-auth-new.env"
+          report="$RUNNER_TEMP/exact-cli-probe.txt"
+          rm -f "$target"
+          set +e
+          stderr="$(node scripts/provision-fixture-auth.mjs --env-file "$target" --port 12345 --bind-host 127.0.0.1 2>&1 >/dev/null)"
+          code=$?
+          set -e
+          sanitized="${stderr//$target/<new-env-path>}"
+          {
+            printf 'node_version=%s\n' "$(node --version)"
+            printf 'source_head=%s\n' "$GITHUB_SHA"
+            printf 'command=node scripts/provision-fixture-auth.mjs --env-file <new-env-path> --port 12345 --bind-host 127.0.0.1\n'
+            printf 'exit_code=%s\n' "$code"
+            printf 'target_created=%s\n' "$([ -e "$target" ] && printf true || printf false)"
+            printf 'stderr=%s\n' "$sanitized"
+          } | tee "$report"
+          test "$code" -ne 0
+          test ! -e "$target"
+          printf '%s' "$sanitized" | grep -F '<new-env-path>: not found'
+      - name: Upload sanitized probe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-cli-probe
+          path: ${{ runner.temp }}/exact-cli-probe.txt
+          if-no-files-found: error
