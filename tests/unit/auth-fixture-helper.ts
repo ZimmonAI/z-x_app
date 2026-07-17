@@ -8,6 +8,26 @@ import {
 } from '../../src/auth-fixture/constants.js';
 import { loadConfig } from '../../src/config.js';
 
+export function parseStatusCompatibleEnvironmentFile(contents: string): Record<string, string> {
+  const environment: Record<string, string> = {};
+  for (const rawLine of contents.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex === -1) continue;
+    const key = line.substring(0, separatorIndex).trim();
+    let value = line.substring(separatorIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.substring(1, value.length - 1);
+    }
+    if (key) environment[key] = value;
+  }
+  return environment;
+}
+
 export function createFixtureAuthTestConfig() {
   const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const rawPublicJwk = publicKey.export({ format: 'jwk' });
