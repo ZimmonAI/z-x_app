@@ -45,7 +45,11 @@ function calculateKeyId(publicJwk) {
 
 function formatEnvironment(environment) {
   return `${Object.entries(environment)
-    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .map(([key, value]) => {
+      if (typeof value !== 'string') throw new Error(`${key} must be a string`);
+      if (/[\r\n]/u.test(value)) throw new Error(`${key} must be a single-line value`);
+      return `${key}=${value}`;
+    })
     .join('\n')}\n`;
 }
 
