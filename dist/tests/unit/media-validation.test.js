@@ -1,0 +1,4 @@
+import { validateImage, validateVideo } from '../../src/validation/media.js';
+const base = { sizeBytes: 10, width: 1024, height: 1024, checksumSha256: 'a'.repeat(64), storageIdentity: 'zs://x' };
+test('validates image/video and rejects temporary URLs', () => { expect(validateImage({ ...base, mimeType: 'image/png' }).mimeType).toBe('image/png'); expect(validateVideo({ ...base, mimeType: 'video/mp4', durationSeconds: 5 }).durationSeconds).toBe(5); expect(() => validateImage({ ...base, mimeType: 'image/png', temporaryUrl: 'https://temporary' })).toThrow(/temporary/); });
+//# sourceMappingURL=media-validation.test.js.map

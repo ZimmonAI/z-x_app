@@ -1,0 +1,3 @@
+import { canTransition, EXECUTION_STATES } from '../../src/contracts/v1/lifecycle.js';
+test('enforces matrix and manual retry gate', () => { expect(canTransition('accepted', 'resolving-route')).toBe(true); expect(canTransition('running', 'succeeded')).toBe(true); expect(canTransition('succeeded', 'queued')).toBe(false); expect(canTransition('failed', 'queued')).toBe(false); expect(canTransition('failed', 'queued', true)).toBe(true); expect(EXECUTION_STATES).toHaveLength(10); });
+//# sourceMappingURL=lifecycle-transitions.test.js.map

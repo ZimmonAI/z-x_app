@@ -1,0 +1,46 @@
+import { z } from 'zod';
+export declare const OutputResourceV1Schema: z.ZodObject<{
+    resourceId: z.ZodString;
+    resourceVersionId: z.ZodOptional<z.ZodString>;
+    storageIdentity: z.ZodString;
+    checksumSha256: z.ZodString;
+    mimeType: z.ZodString;
+    sizeBytes: z.ZodNumber;
+    width: z.ZodOptional<z.ZodNumber>;
+    height: z.ZodOptional<z.ZodNumber>;
+    durationSeconds: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strict>;
+export declare const ExecutionResultV1Schema: z.ZodObject<{
+    contractVersion: z.ZodLiteral<"zx.execution.v1">;
+    executionId: z.ZodString;
+    attemptId: z.ZodString;
+    routeId: z.ZodString;
+    routeVersion: z.ZodString;
+    runtimeBindingRef: z.ZodString;
+    adapterId: z.ZodString;
+    adapterVersion: z.ZodString;
+    outputs: z.ZodArray<z.ZodObject<{
+        resourceId: z.ZodString;
+        resourceVersionId: z.ZodOptional<z.ZodString>;
+        storageIdentity: z.ZodString;
+        checksumSha256: z.ZodString;
+        mimeType: z.ZodString;
+        sizeBytes: z.ZodNumber;
+        width: z.ZodOptional<z.ZodNumber>;
+        height: z.ZodOptional<z.ZodNumber>;
+        durationSeconds: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
+    boundedPromptText: z.ZodOptional<z.ZodString>;
+    provenance: z.ZodObject<{
+        routeId: z.ZodString;
+        routeVersion: z.ZodString;
+        adapterId: z.ZodString;
+        adapterVersion: z.ZodString;
+        runtimeBindingRef: z.ZodString;
+        fixtureVersion: z.ZodOptional<z.ZodLiteral<"fixture-v1">>;
+        startedAt: z.ZodString;
+        completedAt: z.ZodString;
+    }, z.core.$strict>;
+    completedAt: z.ZodString;
+}, z.core.$strict>;
+export type ExecutionResultV1 = z.infer<typeof ExecutionResultV1Schema>;

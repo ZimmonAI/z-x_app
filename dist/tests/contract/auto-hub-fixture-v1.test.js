@@ -1,0 +1,4 @@
+import { AutoHubFixtureV1 } from '../../fixtures/v1/auto-hub.js';
+const c = new AutoHubFixtureV1(), s = new AbortController().signal;
+test('Auto-Hub fixture covers run states', async () => { const r = await c.startRun({ operation: 'image.generate.v1', adapterId: 'image-generate-v1', runtimeBindingRef: 'rb_fixture_0001' }, s); expect((await c.getRun({ runRef: r.runRef }, s)).status).toBe('succeeded'); expect((await c.getRun({ runRef: r.runRef, fixtureScenario: 'unknown-run' }, s)).status).toBe('unknown'); await expect(c.startRun({ operation: 'image.generate.v1', adapterId: 'x', runtimeBindingRef: 'rb_fixture_0001', fixtureScenario: 'provider-rejected' }, s)).rejects.toThrow(); });
+//# sourceMappingURL=auto-hub-fixture-v1.test.js.map

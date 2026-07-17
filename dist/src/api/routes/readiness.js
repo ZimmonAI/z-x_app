@@ -1,0 +1,2 @@
+export async function readinessRoutes(app, opts) { app.get('/internal/readiness', async (_r, reply) => (await opts.ready()) ? { status: 'ready' } : reply.code(503).send({ status: 'not-ready' })); }
+//# sourceMappingURL=readiness.js.map

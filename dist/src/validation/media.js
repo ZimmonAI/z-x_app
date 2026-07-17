@@ -1,0 +1,13 @@
+export function validateImage(v) { if (!['image/png', 'image/jpeg', 'image/webp'].includes(v.mimeType))
+    throw new Error('image MIME rejected'); if (v.sizeBytes < 0 || v.sizeBytes > 50 * 1024 * 1024)
+    throw new Error('image size rejected'); if (v.width < 64 || v.width > 16384 || v.height < 64 || v.height > 16384)
+    throw new Error('image dimensions rejected'); base(v); return v; }
+export function validateVideo(v) { if (!['video/mp4', 'video/webm'].includes(v.mimeType))
+    throw new Error('video MIME rejected'); if (v.sizeBytes < 0 || v.sizeBytes > 2 * 1024 * 1024 * 1024)
+    throw new Error('video size rejected'); if (v.width < 64 || v.width > 8192 || v.height < 64 || v.height > 8192)
+    throw new Error('video dimensions rejected'); if (v.durationSeconds === undefined || v.durationSeconds < .1 || v.durationSeconds > 180)
+    throw new Error('video duration rejected'); base(v); return v; }
+function base(v) { if (!/^[a-f0-9]{64}$/.test(v.checksumSha256))
+    throw new Error('checksum rejected'); if (!v.storageIdentity || v.temporaryUrl)
+    throw new Error('stable storage identity required and temporary URL prohibited'); }
+//# sourceMappingURL=media.js.map

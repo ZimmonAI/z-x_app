@@ -1,0 +1,6 @@
+import { ZAccountFixtureV1 } from '../../fixtures/v1/z-account.js';
+import { ZProviderFixtureV1 } from '../../fixtures/v1/z-provider.js';
+const s = new AbortController().signal;
+test('z-account fixture covers capacity outcomes', async () => { const r = await new ZProviderFixtureV1().resolveAndValidateRoute({ operation: 'image.generate.v1', routeLocks: {} }, s), c = new ZAccountFixtureV1(); expect((await c.acquire({ route: r }, s)).runtimeBindingRef).toMatch(/^rb_/); for (const fixtureScenario of ['no-capacity', 'login-required', 'account-attention'])
+    await expect(c.acquire({ route: r, fixtureScenario }, s)).rejects.toThrow(); await c.release({ leaseRef: 'x' }, s); await c.reportOutcome({ leaseRef: 'x', outcome: 'ok' }, s); });
+//# sourceMappingURL=z-account-fixture-v1.test.js.map

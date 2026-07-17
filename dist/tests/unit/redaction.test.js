@@ -1,0 +1,3 @@
+import { redact, REDACTED } from '../../src/security/redaction.js';
+test('recursively redacts keys and credential patterns', () => { const out = redact({ authorization: 'Bearer abc', nested: { databaseUrl: 'postgresql://u:p@h/db', note: 'safe' }, arr: ['eyJabc.def.ghi'] }); expect(out.authorization).toBe(REDACTED); expect(out.nested.databaseUrl).toBe(REDACTED); expect(out.nested.note).toBe('safe'); expect(out.arr[0]).toBe(REDACTED); });
+//# sourceMappingURL=redaction.test.js.map

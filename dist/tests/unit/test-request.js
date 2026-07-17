@@ -1,0 +1,3 @@
+import { createHash } from 'node:crypto';
+export function validRequest(operation = 'image_prompt.prepare.v1') { const base = { contractVersion: 'zx.execution.v1', ownerApp: 'video-maker', ownerActionId: 'action-1', idempotencyKey: 'key-1', operationType: operation, frozenInputResources: [], safeScalarInputs: { scene: 'sunrise' }, routeLocks: { provider: 'AUTO', model: 'AUTO', tool: 'AUTO', software: 'AUTO', runMode: 'AUTO' }, requestedOutputType: 'prompt', validationExpectations: {}, timeoutPolicy: { timeoutSeconds: 900 }, retryPolicy: { maxAttempts: 3 }, priority: 5, correlation: {}, traceId: 'trace-1' }; return { ...base, requestFingerprint: createHash('sha256').update(JSON.stringify(base)).digest('hex') }; }
+//# sourceMappingURL=test-request.js.map

@@ -1,0 +1,4 @@
+import { randomUUID } from 'node:crypto';
+import { testPool, reset } from './db-helper.js';
+test('constraints and immutable request trigger hold', async () => { const p = testPool(); await reset(p); await expect(p.query("insert into execution.executions(id,request_id,status,priority,timeout_seconds,max_attempts) values($1,$2,'bad',5,900,3)", [randomUUID(), randomUUID()])).rejects.toThrow(); await p.end(); });
+//# sourceMappingURL=transactions-and-constraints.test.js.map

@@ -1,0 +1,3 @@
+import { redact } from '../../src/security/redaction.js';
+test('redaction corpus contains no credential material', () => { const s = JSON.stringify(redact({ token: 'abc', cookie: 'x', profilePath: '/home/user/profile', databaseUrl: 'postgresql://u:p@h/d' })); expect(s).not.toContain('postgresql://'); expect(s).not.toContain('/home/user'); });
+//# sourceMappingURL=no-secret-persistence-logs.test.js.map

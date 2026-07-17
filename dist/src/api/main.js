@@ -1,0 +1,8 @@
+import { loadConfig } from '../config.js';
+import { buildServer } from './server.js';
+const config = loadConfig();
+if (!config.ZX_API_PORT)
+    throw new Error('ZX_API_PORT is intentionally unresolved; assign it only in a separately authorized runtime action');
+const app = await buildServer({ config });
+await app.listen({ host: config.ZX_API_BIND_HOST, port: config.ZX_API_PORT });
+//# sourceMappingURL=main.js.map

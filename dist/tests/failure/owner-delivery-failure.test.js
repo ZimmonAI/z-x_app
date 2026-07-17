@@ -1,0 +1,3 @@
+import { VideoMakerFixtureV1 } from '../../fixtures/v1/video-maker.js';
+test('owner delivery failure is safe and does not alter result object', async () => { const result = { status: 'succeeded' }; await expect(new VideoMakerFixtureV1().deliverResult({ executionId: 'e', result, fixtureScenario: 'callback-failure' }, new AbortController().signal)).rejects.toThrow(); expect(result.status).toBe('succeeded'); });
+//# sourceMappingURL=owner-delivery-failure.test.js.map

@@ -1,0 +1,7 @@
+import { validateExecutionRequest } from '../../src/validation/request.js';
+import { validRequest } from './test-request.js';
+test('enforces request, depth and string limits', () => { expect(validateExecutionRequest(validRequest()).priority).toBe(5); const deep = {}; let x = deep; for (let i = 0; i < 10; i++) {
+    x.a = {};
+    x = x.a;
+} expect(() => validateExecutionRequest({ ...validRequest(), safeScalarInputs: deep })).toThrow(/depth/); expect(() => validateExecutionRequest({ ...validRequest(), safeScalarInputs: { x: 'x'.repeat(4097) } })).toThrow(/4096/); });
+//# sourceMappingURL=request-validation.test.js.map

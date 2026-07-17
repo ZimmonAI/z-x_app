@@ -1,0 +1,12 @@
+import { ExecutionRequestV1Schema } from '../contracts/v1/execution.js';
+const MAX_BODY = 256 * 1024, MAX_SCALAR = 64 * 1024, MAX_DEPTH = 8, MAX_STRING = 4096;
+function inspect(v, depth = 0) { if (depth > MAX_DEPTH)
+    throw new Error('JSON depth exceeds 8'); if (typeof v === 'string' && v.length > MAX_STRING)
+    throw new Error('string exceeds 4096'); if (v && typeof v === 'object') {
+    for (const child of Array.isArray(v) ? v : Object.values(v))
+        inspect(child, depth + 1);
+} }
+export function validateExecutionRequest(input) { const raw = JSON.stringify(input); if (Buffer.byteLength(raw) > MAX_BODY)
+    throw new Error('request body exceeds 256 KiB'); const parsed = ExecutionRequestV1Schema.parse(input); const scalar = JSON.stringify(parsed.safeScalarInputs); if (Buffer.byteLength(scalar) > MAX_SCALAR)
+    throw new Error('scalar JSON exceeds 64 KiB'); inspect(parsed.safeScalarInputs); return parsed; }
+//# sourceMappingURL=request.js.map

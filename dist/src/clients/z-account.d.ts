@@ -1,0 +1,8 @@
+import type { AcquireCapacityV1, RenewCapacityV1, ReleaseCapacityV1, ReportCapacityOutcomeV1, CapacitySnapshotV1 } from '../contracts/v1/dependencies.js';
+export interface ZAccountCapacityClient {
+    acquire(i: AcquireCapacityV1, s: AbortSignal): Promise<CapacitySnapshotV1>;
+    renew(i: RenewCapacityV1, s: AbortSignal): Promise<CapacitySnapshotV1>;
+    release(i: ReleaseCapacityV1, s: AbortSignal): Promise<void>;
+    reportOutcome(i: ReportCapacityOutcomeV1, s: AbortSignal): Promise<void>;
+}
+export declare function createRealZAccountClient(): ZAccountCapacityClient;
