@@ -6,6 +6,17 @@ const FIXTURE_AUTH_ISSUER = 'urn:zimspace:z-x:fixture-auth';
 const FIXTURE_AUTH_AUDIENCE = 'z-x-execution-runner';
 const FIXTURE_AUTH_ALGORITHM = 'ES256';
 const FIXTURE_AUTH_TOKEN_TTL_SECONDS = '300';
+const FIXTURE_AUTH_ENVIRONMENT_KEYS = [
+  'ZX_FIXTURE_AUTH_BIND_HOST',
+  'ZX_FIXTURE_AUTH_PORT',
+  'ZX_FIXTURE_AUTH_ISSUER',
+  'ZX_FIXTURE_AUTH_AUDIENCE',
+  'ZX_FIXTURE_AUTH_ALGORITHM',
+  'ZX_FIXTURE_AUTH_KEY_ID',
+  'ZX_FIXTURE_AUTH_PRIVATE_JWK_JSON',
+  'ZX_FIXTURE_AUTH_PUBLIC_JWKS_JSON',
+  'ZX_FIXTURE_AUTH_TOKEN_TTL_SECONDS',
+];
 
 function parseArguments(arguments_) {
   const values = { replace: false, bindHost: '127.0.0.1' };
@@ -44,9 +55,20 @@ function calculateKeyId(publicJwk) {
 }
 
 function formatEnvironment(environment) {
-  return `${Object.entries(environment)
-    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-    .join('\n')}\n`;
+  const environmentKeys = Object.keys(environment);
+  if (
+    environmentKeys.length !== FIXTURE_AUTH_ENVIRONMENT_KEYS.length ||
+    environmentKeys.some((key) => !FIXTURE_AUTH_ENVIRONMENT_KEYS.includes(key))
+  ) {
+    throw new Error('fixture auth environment must contain exactly nine variables');
+  }
+  return `${FIXTURE_AUTH_ENVIRONMENT_KEYS.map((key) => {
+    const value = environment[key];
+    if (typeof value !== 'string' || /[\r\n]/u.test(value)) {
+      throw new Error(`${key} must be a single-line string`);
+    }
+    return `${key}=${value}`;
+  }).join('\n')}\n`;
 }
 
 async function main() {
