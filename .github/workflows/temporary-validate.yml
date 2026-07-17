@@ -1,5 +1,6 @@
 name: Temporary validation
 
+# Source-only validation evidence; remove before final merge.
 on:
   push:
     branches:
