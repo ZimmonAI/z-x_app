@@ -15,10 +15,12 @@
       "role": "infrastructure",
       "workingDir": ".",
       "startCommand": "npm run start:auth-fixture",
-      "port": null,
-      "healthCheckUrl": null,
+      "port": 3761,
+      "healthCheckUrl": "http://127.0.0.1:3761/health",
       "localUrl": null,
       "publicUrl": null,
+      "listenHost": "127.0.0.1",
+      "envFile": "{ZIMSPACE_ROOT}\\workspace-os\\storage\\z_secret\\by_entity\\apps\\z-x_app\\auth\\.env",
       "isGateway": false,
       "autoStartWith": [
         "z-x"
@@ -35,10 +37,12 @@
       "role": "main",
       "workingDir": ".",
       "startCommand": "npm run start:api",
-      "port": null,
-      "healthCheckUrl": null,
-      "localUrl": null,
+      "port": 3762,
+      "healthCheckUrl": "http://127.0.0.1:3762/health",
+      "localUrl": "http://100.106.76.100:3762",
       "publicUrl": null,
+      "listenHost": "0.0.0.0",
+      "envFile": "{ZIMSPACE_ROOT}\\workspace-os\\storage\\z_secret\\by_entity\\apps\\z-x_app\\runtime\\api.env",
       "isGateway": false,
       "autoStartWith": [
         "z-x"
@@ -46,7 +50,7 @@
       "dependsOn": [
         "z-x-fixture-auth"
       ],
-      "actionsEnabled": false,
+      "actionsEnabled": true,
       "includeInGitSync": true,
       "sortOrder": 10
     },
@@ -62,12 +66,13 @@
       "healthCheckUrl": null,
       "localUrl": null,
       "publicUrl": null,
+      "envFile": "{ZIMSPACE_ROOT}\\workspace-os\\storage\\z_secret\\by_entity\\apps\\z-x_app\\runtime\\worker.env",
       "isGateway": false,
       "autoStartWith": [
         "z-x"
       ],
       "parentAppId": "z-x-execution-runner-api",
-      "actionsEnabled": false,
+      "actionsEnabled": true,
       "includeInGitSync": true,
       "sortOrder": 20
     }
