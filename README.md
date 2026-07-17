@@ -17,10 +17,10 @@ The source now defines three disabled, unresolved runtimes: `z-x-fixture-auth`, 
 
 `z-x-fixture-auth` is a private test authority owned by `@zimspace/z-x-execution-runner`; it is not a production identity provider. It serves only `GET /internal/health` and the public ES256 JWKS at `GET /.well-known/jwks.json`. It fails closed unless the exact fixture issuer `urn:zimspace:z-x:fixture-auth`, audience `z-x-execution-runner`, 300-second token limit, key ID, private JWK, and matching public JWKS are supplied through the nine `ZX_FIXTURE_AUTH_*` variables listed in `.env.example`.
 
-The Node-built-in provisioning utility writes key material only to the caller-provided file and never prints private key content. Use this exact loopback-only command after an authorized env path and registered port exist:
+The Node-built-in provisioning utility writes key material only to the caller-provided file and never prints private key content. Node.js 22 defines its own `--env-file` option, so the `--` delimiter is required to pass the fixture provisioner's `--env-file` argument through to the script. Use this exact loopback-only command after an authorized env path and registered port exist:
 
 ```text
-node scripts/provision-fixture-auth.mjs --env-file <exact-path> --port <registered-port> --bind-host 127.0.0.1
+node -- scripts/provision-fixture-auth.mjs --env-file <exact-path> --port <registered-port> --bind-host 127.0.0.1
 ```
 
 The generated env file contains exactly the nine fixture-auth variables with one physical line per variable. Scalar values are safe single-line values. The private JWK and public JWKS values are compact raw JSON immediately after `=`, without an outer quote pair or backslash-escaped JSON quotes, so the file is compatible with the current Zimspace Status env loader. `--replace` is permitted only for an explicitly authorized replacement. The fixture-auth runtime remains loopback-only and has no browser, Tailscale, or public `localUrl`.
