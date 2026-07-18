@@ -19,7 +19,11 @@ import {
   prepareNextExecution,
   type FixtureDependencies,
 } from './lifecycle.js';
-import { prepareManualRetry, recoverExpiredLeases } from './reconciliation.js';
+import {
+  prepareManualRetry,
+  reconcileNextStorageCompletion,
+  recoverExpiredLeases,
+} from './reconciliation.js';
 import { ShutdownController } from './shutdown.js';
 
 const config = loadConfig();
@@ -109,7 +113,14 @@ while (!shutdown.isStopping) {
   if (shutdown.isStopping) break;
   let progressed = false;
 
-  if (enabledOperations.size > 0) {
+  progressed = await reconcileNextStorageCompletion(
+    pool,
+    config.ZX_WORKER_ID,
+    config.ZX_WORKER_LEASE_SECONDS,
+    dependencies,
+  );
+
+  if (!progressed && enabledOperations.size > 0) {
     progressed = await prepareManualRetry(
       pool,
       config.ZX_WORKER_ID,
