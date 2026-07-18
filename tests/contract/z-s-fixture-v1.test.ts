@@ -1,1 +1,34 @@
-import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';const c=new ZStorageFixtureV1(),s=new AbortController().signal;test('Z-s fixture returns stable identity and storage failure',async()=>{const a=await c.createOutputAuthorization({executionId:'e',attemptId:'a1',mode:'post-run-ingest',artifactKind:'image',acceptedMimeTypes:['image/png'],mimeType:'image/png'},s);expect(a.authorizationRef).toBe('outauth_e_a1');expect((await c.completeOrIngestOutput({authorizationRef:a.authorizationRef,safeProviderOutputRef:'o',mimeType:'image/png'},s)).storageIdentity).toMatch(/^zs:/);await expect(c.completeOrIngestOutput({authorizationRef:a.authorizationRef,safeProviderOutputRef:'o',mimeType:'image/png',fixtureScenario:'storage-failure'},s)).rejects.toThrow()})
+import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';
+
+const client = new ZStorageFixtureV1();
+const signal = new AbortController().signal;
+
+test('Z-s fixture returns stable identity and storage failure', async () => {
+  const authorization = await client.createOutputAuthorization(
+    {
+      executionId: 'e',
+      attemptId: 'a1',
+      mode: 'post-run-ingest',
+      artifactKind: 'image',
+      acceptedMimeTypes: ['image/png'],
+      mimeType: 'image/png',
+    },
+    signal,
+  );
+  expect(authorization.authorizationRef).toBe('outauth_e_a1');
+
+  const completion = {
+    executionId: 'e',
+    attemptId: 'a1',
+    authorizationRef: authorization.authorizationRef,
+    safeProviderOutputRef: 'o',
+    mimeType: 'image/png',
+  } as const;
+  expect((await client.completeOrIngestOutput(completion, signal)).storageIdentity).toMatch(/^zs:/);
+  await expect(
+    client.completeOrIngestOutput(
+      { ...completion, fixtureScenario: 'storage-failure' },
+      signal,
+    ),
+  ).rejects.toThrow();
+});
