@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { dispatchAndStoreMedia } from '../../src/adapters/types.js';
-import { SafeExecutionError } from '../../src/contracts/v1/error.js';
 import { ExecutionRequestV1Schema } from '../../src/contracts/v1/execution.js';
 
 function ownerRequest() {
@@ -89,7 +88,7 @@ describe('owner-issued storage flow', () => {
         },
         'image',
       ),
-    ).rejects.toMatchObject<Partial<SafeExecutionError>>({
+    ).rejects.toMatchObject({
       safe: expect.objectContaining({
         code: 'ZX_Z_S_DELEGATED_OUTPUT_NOT_READY',
         retryable: true,
