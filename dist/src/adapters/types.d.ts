@@ -7,9 +7,15 @@ export interface AdapterContext {
     route: RouteSnapshotV1;
     capacity: CapacitySnapshotV1;
     executionId: string;
+    attemptId: string;
     signal: AbortSignal;
     autoHub: AutoHubDispatchClient;
     storage: ZStorageClient;
+    recordProviderOutput(input: {
+        externalRunRef?: string;
+        safeProviderOutputRef: string;
+    }): Promise<void>;
+    recordOutputAuthorization(authorizationRef: string): Promise<void>;
 }
 export interface AdapterOutput {
     promptText?: string;

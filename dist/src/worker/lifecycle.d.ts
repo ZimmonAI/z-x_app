@@ -19,7 +19,16 @@ export interface ClaimedExecution {
     attemptId: string;
     leaseToken: string;
 }
-export declare function executePreparedFixturePath(request: ExecutionRequestV1, executionId: string, route: RouteSnapshotV1, capacity: CapacitySnapshotV1, dependencies: FixtureDependencies, signal?: AbortSignal): Promise<AdapterOutput>;
+interface AttemptProviderOutputRecord {
+    externalRunRef?: string;
+    safeProviderOutputRef: string;
+}
+export declare function executePreparedFixturePath(request: ExecutionRequestV1, executionId: string, route: RouteSnapshotV1, capacity: CapacitySnapshotV1, dependencies: FixtureDependencies, signal?: AbortSignal, persistence?: {
+    attemptId: string;
+    recordProviderOutput(input: AttemptProviderOutputRecord): Promise<void>;
+    recordOutputAuthorization(authorizationRef: string): Promise<void>;
+}): Promise<AdapterOutput>;
 export declare function executeFixturePath(request: ExecutionRequestV1, executionId: string, dependencies: FixtureDependencies, signal?: AbortSignal): Promise<AdapterOutput>;
 export declare function prepareNextExecution(pool: pg.Pool, workerId: string, leaseSeconds: number, dependencies: FixtureDependencies, signal?: AbortSignal): Promise<boolean>;
 export declare function completeClaimedExecution(pool: pg.Pool, claim: ClaimedExecution, workerId: string, dependencies: FixtureDependencies, signal?: AbortSignal): Promise<void>;
+export {};

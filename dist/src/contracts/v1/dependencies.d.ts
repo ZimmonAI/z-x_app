@@ -94,6 +94,12 @@ export interface CancelRunV1 {
 }
 export interface CreateOutputAuthorizationV1 {
     executionId: string;
+    attemptId: string;
+    mode: 'post-run-ingest' | 'direct-write';
+    artifactKind: 'image' | 'video';
+    acceptedMimeTypes: readonly string[];
+    storageProfileRef?: string;
+    maxBytes?: number;
     mimeType: string;
     fixtureScenario?: FixtureScenario;
 }

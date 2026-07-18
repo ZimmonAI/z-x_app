@@ -83,6 +83,17 @@ export async function dispatchAndStoreMedia(
   kind: 'image' | 'video',
 ): Promise<AdapterOutput> {
   const scenario = fixtureScenario(context.request);
+  const storageOutput = context.request.storageOutput;
+  const mode = storageOutput?.mode ?? 'post-run-ingest';
+  if (mode === 'direct-write') {
+    throw new SafeExecutionError({
+      family: 'adapter-unavailable',
+      code: 'ZX_DIRECT_WRITE_UNSUPPORTED',
+      message: 'direct-write storage output is not supported by this adapter path',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
   const started = await context.autoHub.startRun(
     {
       operation: context.request.operationType,
@@ -139,17 +150,6 @@ export async function dispatchAndStoreMedia(
   }
 
   const mimeType = context.request.requestedOutputType;
-  const storageOutput = context.request.storageOutput;
-  const mode = storageOutput?.mode ?? 'post-run-ingest';
-  if (mode === 'direct-write') {
-    throw new SafeExecutionError({
-      family: 'adapter-unavailable',
-      code: 'ZX_DIRECT_WRITE_UNSUPPORTED',
-      message: 'direct-write storage output is not supported by this adapter path',
-      retryable: false,
-      traceId: context.request.traceId,
-    });
-  }
   await context.recordProviderOutput({
     externalRunRef: run.runRef,
     safeProviderOutputRef: run.safeOutputRef,

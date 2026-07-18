@@ -37,6 +37,17 @@ export function requiredScalarString(request, key) {
 }
 export async function dispatchAndStoreMedia(context, kind) {
     const scenario = fixtureScenario(context.request);
+    const storageOutput = context.request.storageOutput;
+    const mode = storageOutput?.mode ?? 'post-run-ingest';
+    if (mode === 'direct-write') {
+        throw new SafeExecutionError({
+            family: 'adapter-unavailable',
+            code: 'ZX_DIRECT_WRITE_UNSUPPORTED',
+            message: 'direct-write storage output is not supported by this adapter path',
+            retryable: false,
+            traceId: context.request.traceId,
+        });
+    }
     const started = await context.autoHub.startRun({
         operation: context.request.operationType,
         adapterId: context.route.adapterId,
@@ -84,7 +95,22 @@ export async function dispatchAndStoreMedia(context, kind) {
         });
     }
     const mimeType = context.request.requestedOutputType;
-    const authorization = await context.storage.createOutputAuthorization({ executionId: context.executionId, mimeType, fixtureScenario: scenario }, context.signal);
+    await context.recordProviderOutput({
+        externalRunRef: run.runRef,
+        safeProviderOutputRef: run.safeOutputRef,
+    });
+    const authorization = await context.storage.createOutputAuthorization({
+        executionId: context.executionId,
+        attemptId: context.attemptId,
+        mode,
+        artifactKind: storageOutput?.artifactKind ?? kind,
+        acceptedMimeTypes: storageOutput?.acceptedMimeTypes ?? [mimeType],
+        storageProfileRef: storageOutput?.storageProfileRef,
+        maxBytes: storageOutput?.maxBytes,
+        mimeType,
+        fixtureScenario: scenario,
+    }, context.signal);
+    await context.recordOutputAuthorization(authorization.authorizationRef);
     const media = await context.storage.completeOrIngestOutput({
         authorizationRef: authorization.authorizationRef,
         safeProviderOutputRef: run.safeOutputRef,

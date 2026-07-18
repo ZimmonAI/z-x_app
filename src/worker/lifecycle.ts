@@ -249,12 +249,6 @@ export async function executeFixturePath(
       capacity,
       dependencies,
       signal,
-      {
-        attemptId: claim.attemptId,
-        recordProviderOutput: (input) => recordProviderOutputForClaim(pool, claim, input),
-        recordOutputAuthorization: (authorizationRef) =>
-          recordOutputAuthorizationForClaim(pool, claim, authorizationRef),
-      },
     );
     outcome = 'succeeded';
     return result;
@@ -573,6 +567,12 @@ export async function completeClaimedExecution(
       row.capacity_snapshot,
       dependencies,
       signal,
+      {
+        attemptId: claim.attemptId,
+        recordProviderOutput: (input) => recordProviderOutputForClaim(pool, claim, input),
+        recordOutputAuthorization: (authorizationRef) =>
+          recordOutputAuthorizationForClaim(pool, claim, authorizationRef),
+      },
     );
     const completedAt = new Date().toISOString();
     const result = ExecutionResultV1Schema.parse({

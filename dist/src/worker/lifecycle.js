@@ -33,16 +33,89 @@ async function appendTransition(client, input) {
         input.safeMetadata ?? {},
     ]);
 }
-export async function executePreparedFixturePath(request, executionId, route, capacity, dependencies, signal = new AbortController().signal) {
+async function recordProviderOutputForClaim(pool, claim, input) {
+    await withTransaction(pool, async (client) => {
+        const selected = await client.query(`select external_run_ref, safe_provider_output_ref
+         from execution.execution_attempts
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'
+        for update`, [claim.attemptId, claim.executionId, claim.leaseToken]);
+        const row = selected.rows[0];
+        if (!row)
+            throw new Error('lease lost before provider output persistence');
+        if (row.safe_provider_output_ref !== null &&
+            row.safe_provider_output_ref !== input.safeProviderOutputRef) {
+            throw new SafeExecutionError({
+                family: 'reconciliation-required',
+                code: 'ZX_PROVIDER_OUTPUT_REF_CONFLICT',
+                message: 'provider output reference replacement was rejected',
+                retryable: false,
+                traceId: 'internal',
+            });
+        }
+        if (input.externalRunRef !== undefined &&
+            row.external_run_ref !== null &&
+            row.external_run_ref !== input.externalRunRef) {
+            throw new SafeExecutionError({
+                family: 'reconciliation-required',
+                code: 'ZX_EXTERNAL_RUN_REF_CONFLICT',
+                message: 'external run reference replacement was rejected',
+                retryable: false,
+                traceId: 'internal',
+            });
+        }
+        await client.query(`update execution.execution_attempts
+          set external_run_ref=coalesce(external_run_ref,$4),
+              safe_provider_output_ref=coalesce(safe_provider_output_ref,$5),
+              updated_at=now()
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'`, [
+            claim.attemptId,
+            claim.executionId,
+            claim.leaseToken,
+            input.externalRunRef ?? null,
+            input.safeProviderOutputRef,
+        ]);
+    });
+}
+async function recordOutputAuthorizationForClaim(pool, claim, authorizationRef) {
+    await withTransaction(pool, async (client) => {
+        const selected = await client.query(`select output_authorization_ref
+         from execution.execution_attempts
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'
+        for update`, [claim.attemptId, claim.executionId, claim.leaseToken]);
+        const row = selected.rows[0];
+        if (!row)
+            throw new Error('lease lost before output authorization persistence');
+        if (row.output_authorization_ref !== null && row.output_authorization_ref !== authorizationRef) {
+            throw new SafeExecutionError({
+                family: 'reconciliation-required',
+                code: 'ZX_OUTPUT_AUTHORIZATION_REF_CONFLICT',
+                message: 'output authorization reference replacement was rejected',
+                retryable: false,
+                traceId: 'internal',
+            });
+        }
+        await client.query(`update execution.execution_attempts
+          set output_authorization_ref=coalesce(output_authorization_ref,$4), updated_at=now()
+        where id=$1 and execution_id=$2 and lease_token=$3
+          and lease_expires_at>now() and status='running'`, [claim.attemptId, claim.executionId, claim.leaseToken, authorizationRef]);
+    });
+}
+export async function executePreparedFixturePath(request, executionId, route, capacity, dependencies, signal = new AbortController().signal, persistence) {
     const adapter = getAdapter(request.operationType, route.adapterId, route.adapterVersion, route.invocationMode);
     return adapter.execute({
         request,
         route,
         capacity,
         executionId,
+        attemptId: persistence?.attemptId ?? executionId,
         signal,
         autoHub: dependencies.autoHub,
         storage: dependencies.storage,
+        recordProviderOutput: persistence?.recordProviderOutput ?? (async () => { }),
+        recordOutputAuthorization: persistence?.recordOutputAuthorization ?? (async () => { }),
     });
 }
 export async function executeFixturePath(request, executionId, dependencies, signal = new AbortController().signal) {
@@ -275,7 +348,11 @@ export async function completeClaimedExecution(pool, claim, workerId, dependenci
     const request = validateExecutionRequest(row.request_envelope);
     let capacityOutcome = 'failed';
     try {
-        const output = await executePreparedFixturePath(request, claim.executionId, row.route_snapshot, row.capacity_snapshot, dependencies, signal);
+        const output = await executePreparedFixturePath(request, claim.executionId, row.route_snapshot, row.capacity_snapshot, dependencies, signal, {
+            attemptId: claim.attemptId,
+            recordProviderOutput: (input) => recordProviderOutputForClaim(pool, claim, input),
+            recordOutputAuthorization: (authorizationRef) => recordOutputAuthorizationForClaim(pool, claim, authorizationRef),
+        });
         const completedAt = new Date().toISOString();
         const result = ExecutionResultV1Schema.parse({
             contractVersion: 'zx.execution.v1',

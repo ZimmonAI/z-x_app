@@ -3,6 +3,20 @@ export declare const CONTRACT_VERSION: "zx.execution.v1";
 export declare const FIXTURE_VERSION: "fixture-v1";
 export declare const OPERATION_TYPES: readonly ["image_prompt.prepare.v1", "image.generate.v1", "scene_video_prompt.prepare.v1", "scene_video.generate.v1"];
 export type OperationType = (typeof OPERATION_TYPES)[number];
+export declare const StorageOutputRequestV1Schema: z.ZodObject<{
+    contractVersion: z.ZodLiteral<"zx.storage-output.v1">;
+    mode: z.ZodEnum<{
+        "post-run-ingest": "post-run-ingest";
+        "direct-write": "direct-write";
+    }>;
+    artifactKind: z.ZodEnum<{
+        image: "image";
+        video: "video";
+    }>;
+    acceptedMimeTypes: z.ZodArray<z.ZodString>;
+    storageProfileRef: z.ZodOptional<z.ZodString>;
+    maxBytes: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strict>;
 export declare const ResourceReferenceV1Schema: z.ZodObject<{
     resourceId: z.ZodString;
     resourceVersionId: z.ZodOptional<z.ZodString>;
@@ -46,6 +60,20 @@ export declare const ExecutionRequestV1Schema: z.ZodObject<{
         runMode: z.ZodDefault<z.ZodString>;
     }, z.core.$strict>;
     requestedOutputType: z.ZodString;
+    storageOutput: z.ZodOptional<z.ZodObject<{
+        contractVersion: z.ZodLiteral<"zx.storage-output.v1">;
+        mode: z.ZodEnum<{
+            "post-run-ingest": "post-run-ingest";
+            "direct-write": "direct-write";
+        }>;
+        artifactKind: z.ZodEnum<{
+            image: "image";
+            video: "video";
+        }>;
+        acceptedMimeTypes: z.ZodArray<z.ZodString>;
+        storageProfileRef: z.ZodOptional<z.ZodString>;
+        maxBytes: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
     validationExpectations: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     timeoutPolicy: z.ZodDefault<z.ZodObject<{
         timeoutSeconds: z.ZodDefault<z.ZodNumber>;
@@ -58,3 +86,4 @@ export declare const ExecutionRequestV1Schema: z.ZodObject<{
     traceId: z.ZodString;
 }, z.core.$strict>;
 export type ExecutionRequestV1 = z.infer<typeof ExecutionRequestV1Schema>;
+export type StorageOutputRequestV1 = z.infer<typeof StorageOutputRequestV1Schema>;
