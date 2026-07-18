@@ -2,6 +2,7 @@ import { AutoHubFixtureV1 } from '../../fixtures/v1/auto-hub.js';
 import { ZAccountFixtureV1 } from '../../fixtures/v1/z-account.js';
 import { ZProviderFixtureV1 } from '../../fixtures/v1/z-provider.js';
 import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';
+import { createRealZStorageClient, type ZStorageClient } from '../clients/z-s.js';
 import { loadConfig } from '../config.js';
 import { SafeExecutionError } from '../contracts/v1/error.js';
 import type { OperationType } from '../contracts/v1/execution.js';
@@ -53,6 +54,18 @@ const logger = createLogger(config.ZX_LOG_LEVEL);
 const pool = createPool(config.ZX_DATABASE_URL);
 const shutdown = new ShutdownController();
 const routeFixture = new ZProviderFixtureV1();
+
+function createStorageClient(): ZStorageClient {
+  if (!config.ZX_FEATURE_REAL_Z_S_ENABLED) return new ZStorageFixtureV1();
+  if (!config.ZX_Z_S_BASE_URL || !config.ZX_Z_S_BEARER_TOKEN) {
+    throw new Error('real Z-s configuration is incomplete');
+  }
+  return createRealZStorageClient({
+    baseUrl: config.ZX_Z_S_BASE_URL,
+    bearerToken: config.ZX_Z_S_BEARER_TOKEN,
+  });
+}
+
 const dependencies: FixtureDependencies = {
   routes: {
     async resolveAndValidateRoute(input, signal) {
@@ -71,7 +84,7 @@ const dependencies: FixtureDependencies = {
   },
   capacity: new ZAccountFixtureV1(),
   autoHub: new AutoHubFixtureV1(),
-  storage: new ZStorageFixtureV1(),
+  storage: createStorageClient(),
 };
 
 const abortControllers = new Set<AbortController>();

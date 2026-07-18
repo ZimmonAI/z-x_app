@@ -138,6 +138,8 @@ export interface CreateOutputAuthorizationV1 {
 }
 
 export interface CompleteOutputV1 {
+  executionId: string;
+  attemptId: string;
   authorizationRef: string;
   safeProviderOutputRef: string;
   mimeType: string;

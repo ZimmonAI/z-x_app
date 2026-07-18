@@ -171,6 +171,8 @@ export async function dispatchAndStoreMedia(
   await context.recordOutputAuthorization(authorization.authorizationRef);
   const media = await context.storage.completeOrIngestOutput(
     {
+      executionId: context.executionId,
+      attemptId: context.attemptId,
       authorizationRef: authorization.authorizationRef,
       safeProviderOutputRef: run.safeOutputRef,
       mimeType,

@@ -8,6 +8,10 @@ import type {
   ReconcileOutputV1,
   OutputReconciliationV1,
 } from '../contracts/v1/dependencies.js';
+import {
+  ZStorageHttpClient,
+  type ZStorageHttpClientOptions,
+} from './z-s-http.js';
 
 export interface ZStorageClient {
   createOutputAuthorization(
@@ -22,6 +26,8 @@ export interface ZStorageClient {
   createReadGrant(input: CreateReadGrantV1, signal: AbortSignal): Promise<ReadGrantV1>;
 }
 
-export function createRealZStorageClient(): ZStorageClient {
-  throw new Error('real Z-s client disabled pending owner-published contract');
+export type { ZStorageHttpClientOptions };
+
+export function createRealZStorageClient(options: ZStorageHttpClientOptions): ZStorageClient {
+  return new ZStorageHttpClient(options);
 }
