@@ -204,7 +204,7 @@ BEGIN
     RAISE EXCEPTION 'terminal video-maker execution truth is immutable';
   END IF;
   RETURN NEW;
-END
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION execution.guard_video_maker_regeneration()
@@ -285,7 +285,7 @@ BEGIN
     RAISE EXCEPTION 'regeneration must inherit the prior safe continuation reference';
   END IF;
   RETURN NEW;
-END
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION execution.guard_completed_phase_attempt()
@@ -308,7 +308,7 @@ BEGIN
     RAISE EXCEPTION 'phase attempt identity is immutable';
   END IF;
   RETURN NEW;
-END
+END;
 $$;
 
 CREATE TRIGGER executions_video_maker_regeneration_guard
@@ -358,7 +358,7 @@ BEGIN
       worker_role
     );
   END IF;
-END
+END;
 $$;
 
 COMMENT ON TABLE execution.execution_phase_attempts IS
