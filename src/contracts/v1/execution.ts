@@ -75,7 +75,9 @@ export const StorageOutputRequestV1Schema = z
     acceptedMimeTypes: z.array(safeMimeType).min(1).max(16).refine(hasUniqueValues, {
       message: 'acceptedMimeTypes must be unique',
     }),
-    storageProfileRef: safeString.refine(isSafeStorageProfileRef, 'unsafe storage profile reference').optional(),
+    storageProfileRef: safeString
+      .refine(isSafeStorageProfileRef, 'unsafe storage profile reference')
+      .optional(),
     maxBytes: z.number().int().positive().safe().optional(),
   })
   .strict();
@@ -119,6 +121,61 @@ function isGeneratedMediaOperation(operationType: OperationType): boolean {
   return operationType === 'image.generate.v1' || operationType === 'scene_video.generate.v1';
 }
 
+function validateOutputShape(
+  request: {
+    operationType: OperationType;
+    requestedOutputType: string;
+  },
+  output: {
+    artifactKind: 'image' | 'video';
+    acceptedMimeTypes: string[];
+  },
+  path: 'ownerStorageAccess' | 'storageOutput',
+  context: z.RefinementCtx,
+): void {
+  if (!output.acceptedMimeTypes.includes(request.requestedOutputType)) {
+    context.addIssue({
+      code: 'custom',
+      path: [path, 'acceptedMimeTypes'],
+      message: 'requestedOutputType must be accepted',
+    });
+  }
+
+  if (request.operationType === 'image.generate.v1') {
+    if (output.artifactKind !== 'image') {
+      context.addIssue({
+        code: 'custom',
+        path: [path, 'artifactKind'],
+        message: 'image operation requires image artifact kind',
+      });
+    }
+    if (!request.requestedOutputType.startsWith('image/')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['requestedOutputType'],
+        message: 'image operation requires image output MIME',
+      });
+    }
+  }
+
+  if (request.operationType === 'scene_video.generate.v1') {
+    if (output.artifactKind !== 'video') {
+      context.addIssue({
+        code: 'custom',
+        path: [path, 'artifactKind'],
+        message: 'scene-video operation requires video artifact kind',
+      });
+    }
+    if (!request.requestedOutputType.startsWith('video/')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['requestedOutputType'],
+        message: 'scene-video operation requires video output MIME',
+      });
+    }
+  }
+}
+
 export const ExecutionRequestV1Schema = z
   .object({
     contractVersion: z.literal(CONTRACT_VERSION),
@@ -152,6 +209,7 @@ export const ExecutionRequestV1Schema = z
     const generatedMedia = isGeneratedMediaOperation(request.operationType);
     const fixtureMode = typeof request.safeScalarInputs.fixtureScenario === 'string';
     const ownerStorageAccess = request.ownerStorageAccess;
+    const storageOutput = request.storageOutput;
 
     if (generatedMedia && !fixtureMode && !ownerStorageAccess) {
       context.addIssue({
@@ -187,48 +245,11 @@ export const ExecutionRequestV1Schema = z
       });
     }
 
-    if (!ownerStorageAccess) return;
-
-    if (!ownerStorageAccess.acceptedMimeTypes.includes(request.requestedOutputType)) {
-      context.addIssue({
-        code: 'custom',
-        path: ['ownerStorageAccess', 'acceptedMimeTypes'],
-        message: 'requestedOutputType must be accepted',
-      });
+    if (storageOutput) {
+      validateOutputShape(request, storageOutput, 'storageOutput', context);
     }
-
-    if (request.operationType === 'image.generate.v1') {
-      if (ownerStorageAccess.artifactKind !== 'image') {
-        context.addIssue({
-          code: 'custom',
-          path: ['ownerStorageAccess', 'artifactKind'],
-          message: 'image operation requires image artifact kind',
-        });
-      }
-      if (!request.requestedOutputType.startsWith('image/')) {
-        context.addIssue({
-          code: 'custom',
-          path: ['requestedOutputType'],
-          message: 'image operation requires image output MIME',
-        });
-      }
-    }
-
-    if (request.operationType === 'scene_video.generate.v1') {
-      if (ownerStorageAccess.artifactKind !== 'video') {
-        context.addIssue({
-          code: 'custom',
-          path: ['ownerStorageAccess', 'artifactKind'],
-          message: 'scene-video operation requires video artifact kind',
-        });
-      }
-      if (!request.requestedOutputType.startsWith('video/')) {
-        context.addIssue({
-          code: 'custom',
-          path: ['requestedOutputType'],
-          message: 'scene-video operation requires video output MIME',
-        });
-      }
+    if (ownerStorageAccess) {
+      validateOutputShape(request, ownerStorageAccess, 'ownerStorageAccess', context);
     }
   });
 
