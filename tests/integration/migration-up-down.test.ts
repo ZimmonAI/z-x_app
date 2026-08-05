@@ -20,6 +20,24 @@ test('migration up, rollback, and reapply preserve the additive phase schema', a
       )
     ).rows[0].c,
   ).toContain('Video Maker');
+  expect(
+    (
+      await pool.query(
+        "select pg_get_functiondef('execution.guard_video_maker_regeneration()'::regprocedure) definition",
+      )
+    ).rows[0].definition,
+  ).toContain('CASE current_tool_key');
+  expect(
+    (
+      await pool.query(
+        `select count(*)::int n
+           from pg_trigger
+          where tgrelid='execution.executions'::regclass
+            and tgname='executions_video_maker_regeneration_guard'
+            and not tgisinternal`,
+      )
+    ).rows[0].n,
+  ).toBe(1);
 
   await down(pool);
   expect((await pool.query("select to_regnamespace('execution') is null gone")).rows[0].gone).toBe(
