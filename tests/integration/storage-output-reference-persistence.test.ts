@@ -13,6 +13,14 @@ function imageStorageRequest() {
     ...validRequest('image.generate.v1'),
     safeScalarInputs: { prompt: 'cinematic sunrise' },
     requestedOutputType: 'image/png',
+    ownerStorageAccess: {
+      contractVersion: 'zx.owner-storage-access.v1',
+      pendingResourceId: 'pending-image-output-reference',
+      outputWriteGrantRef: 'write-grant-image-output-reference',
+      artifactKind: 'image',
+      acceptedMimeTypes: ['image/png'],
+      maxBytes: 1048576,
+    },
     storageOutput: {
       contractVersion: 'zx.storage-output.v1',
       mode: 'post-run-ingest',
