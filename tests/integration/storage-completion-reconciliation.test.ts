@@ -1,124 +1,151 @@
-import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
-import { afterEach, expect, test, vi } from 'vitest';
+import { AutoHubFixtureV1 } from '../../fixtures/v1/auto-hub.js';
+import { ZAccountFixtureV1 } from '../../fixtures/v1/z-account.js';
+import { ZProviderFixtureV1 } from '../../fixtures/v1/z-provider.js';
 import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';
+import type {
+  CompleteOutputV1,
+  OutputReconciliationV1,
+  ReconcileOutputV1,
+  StorageResultV1,
+} from '../../src/contracts/v1/dependencies.js';
+import { SafeExecutionError } from '../../src/contracts/v1/error.js';
 import { ExecutionResultV1Schema } from '../../src/contracts/v1/result.js';
-import type { Dependencies } from '../../src/dependencies.js';
-import { reconcileNextStorageCompletion } from '../../src/worker/reconcile-storage.js';
-import { applyMigrations, cleanupPool, createTestPool } from '../helpers/database.js';
+import { ExecutionsRepository } from '../../src/persistence/repositories/executions.js';
+import { claimNext } from '../../src/worker/claim.js';
+import {
+  completeClaimedExecution,
+  prepareNextExecution,
+  type FixtureDependencies,
+} from '../../src/worker/lifecycle.js';
+import { reconcileNextStorageCompletion } from '../../src/worker/reconciliation.js';
 import { validRequest } from '../unit/test-request.js';
+import { reset, testPool } from './db-helper.js';
 
-const pools: Pool[] = [];
-afterEach(async () => cleanupPool(pools));
+class RecoveringStorage extends ZStorageFixtureV1 {
+  readonly reconciliationInputs: ReconcileOutputV1[] = [];
 
-async function createStorageReconciliationCase() {
-  const pool = createTestPool();
-  pools.push(pool);
-  await applyMigrations(pool);
+  constructor(private readonly delayMilliseconds = 0) {
+    super();
+  }
 
-  const executionId = randomUUID();
-  const attemptId = randomUUID();
-  const caseId = randomUUID();
-  const authorizationRef = `auth-${randomUUID()}`;
-  const safeProviderOutputRef = `safe-provider-${randomUUID()}`;
-  const request = validRequest('image.generate.v1');
+  override async completeOrIngestOutput(
+    _input: CompleteOutputV1,
+    _signal: AbortSignal,
+  ): Promise<StorageResultV1> {
+    throw new SafeExecutionError({
+      family: 'storage-output-failure',
+      code: 'ZX_STORAGE_COMPLETION_UNCERTAIN',
+      message: 'fixture storage completion is uncertain',
+      retryable: true,
+      traceId: 'fixture',
+    });
+  }
 
-  await pool.query(
-    `insert into execution.executions
-       (id, owner_app, owner_action_id, idempotency_key, request_fingerprint,
-        contract_version, operation_type, request_envelope, status, current_attempt_count,
-        created_at, updated_at)
-     values ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,'reconciliation-required',1,now(),now())`,
-    [
-      executionId,
-      request.ownerApp,
-      request.ownerActionId,
-      request.idempotencyKey,
-      request.requestFingerprint,
-      request.contractVersion,
-      request.operationType,
-      JSON.stringify(request),
-    ],
-  );
-  await pool.query(
-    `insert into execution.execution_attempts
-       (id, execution_id, attempt_number, status, output_authorization_ref,
-        safe_provider_output_ref, started_at, completed_at)
-     values ($1,$2,1,'reconciliation-required',$3,$4,now(),now())`,
-    [attemptId, executionId, authorizationRef, safeProviderOutputRef],
-  );
-  await pool.query(
-    `insert into execution.execution_reconciliation_cases
-       (id, execution_id, attempt_id, reason_family, status, created_at, updated_at)
-     values ($1,$2,$3,'storage-completion-uncertain','open',now(),now())`,
-    [caseId, executionId, attemptId],
-  );
+  override async reconcileOutput(
+    input: ReconcileOutputV1,
+    signal: AbortSignal,
+  ): Promise<OutputReconciliationV1> {
+    this.reconciliationInputs.push(input);
+    if (this.delayMilliseconds > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.delayMilliseconds));
+    }
+    return super.reconcileOutput({ ...input, fixtureScenario: 'success' }, signal);
+  }
+}
 
-  const fixture = new ZStorageFixtureV1();
-  const complete = await fixture.completeOrIngestOutput(
-    {
-      executionId,
-      attemptId,
-      authorizationRef,
-      safeProviderOutputRef,
-      mimeType: request.requestedOutputType,
-      fixtureScenario: 'success',
-    },
-    new AbortController().signal,
-  );
-
-  const capacityReleaseCalls = vi.fn();
-  const providerCalls = vi.fn();
-  const authorizationCalls = vi.fn();
-  const dependencies = {
-    routeRegistry: {
-      resolveRoute: providerCalls,
-    },
-    capacity: {
-      acquire: providerCalls,
-      renew: providerCalls,
-      release: capacityReleaseCalls,
-      reportOutcome: providerCalls,
-    },
-    autoHub: {
-      startRun: providerCalls,
-      getRun: providerCalls,
-      cancelRun: providerCalls,
-    },
-    zStorage: {
-      createOutputAuthorization: authorizationCalls,
-      completeOrIngestOutput: authorizationCalls,
-      reconcileOutput: vi.fn().mockResolvedValue({ status: 'completed', result: complete }),
-      createReadGrant: providerCalls,
-    },
-    ownerDelivery: {
-      deliver: providerCalls,
-    },
-  } as unknown as Dependencies;
-
+function imageStorageRequest() {
   return {
-    pool,
-    executionId,
-    attemptId,
-    caseId,
-    authorizationRef,
-    safeProviderOutputRef,
-    dependencies,
-    capacityReleaseCalls,
-    providerCalls,
-    authorizationCalls,
+    ...validRequest('image.generate.v1'),
+    safeScalarInputs: { prompt: 'cinematic sunrise' },
+    requestedOutputType: 'image/png',
+    storageOutput: {
+      contractVersion: 'zx.storage-output.v1',
+      mode: 'post-run-ingest',
+      artifactKind: 'image',
+      acceptedMimeTypes: ['image/png'],
+      storageProfileRef: 'zs-profile:fixture.default',
+      maxBytes: 1048576,
+    },
   };
 }
 
-test('storage reconciliation finalizes a provider-success execution without redispatch', async () => {
-  const state = await createStorageReconciliationCase();
-  const {
-    pool,
-    capacityReleaseCalls,
-    providerCalls,
-    authorizationCalls,
-  } = state;
+async function createUncertainStorageExecution(
+  pool: ReturnType<typeof testPool>,
+  storage: RecoveringStorage,
+): Promise<{
+  dependencies: FixtureDependencies;
+  executionId: string;
+  attemptId: string;
+  caseId: string;
+  authorizationRef: string;
+  safeProviderOutputRef: string;
+}> {
+  const dependencies: FixtureDependencies = {
+    routes: new ZProviderFixtureV1(),
+    capacity: new ZAccountFixtureV1(),
+    autoHub: new AutoHubFixtureV1(),
+    storage,
+  };
+  const submitted = await new ExecutionsRepository(pool).submit(imageStorageRequest() as never);
+  if (submitted.kind !== 'created') throw new Error('expected created execution');
+  await prepareNextExecution(pool, 'worker-prepare', 60, dependencies);
+  const claim = await claimNext(pool, 'worker-run');
+  if (!claim) throw new Error('expected execution claim');
+  await completeClaimedExecution(pool, claim, 'worker-run', dependencies);
+
+  const state = await pool.query<{
+    execution_status: string;
+    attempt_status: string;
+    output_authorization_ref: string | null;
+    safe_provider_output_ref: string | null;
+    case_id: string;
+    case_status: string;
+    next_check_at: Date;
+  }>(
+    `select e.status as execution_status, a.status as attempt_status,
+            a.output_authorization_ref, a.safe_provider_output_ref,
+            c.id as case_id, c.status as case_status, c.next_check_at
+       from execution.executions e
+       join execution.execution_attempts a on a.id=$2 and a.execution_id=e.id
+       join execution.execution_reconciliation_cases c
+         on c.execution_id=e.id and c.attempt_id=a.id
+      where e.id=$1`,
+    [claim.executionId, claim.attemptId],
+  );
+  const row = state.rows[0];
+  expect(row?.execution_status).toBe('reconciliation-required');
+  expect(row?.attempt_status).toBe('reconciliation-required');
+  expect(row?.case_status).toBe('open');
+  expect(row?.next_check_at.getTime()).toBeLessThanOrEqual(Date.now());
+  if (!row?.output_authorization_ref || !row.safe_provider_output_ref || !row.case_id) {
+    throw new Error('expected persisted storage reconciliation references');
+  }
+  return {
+    dependencies,
+    executionId: claim.executionId,
+    attemptId: claim.attemptId,
+    caseId: row.case_id,
+    authorizationRef: row.output_authorization_ref,
+    safeProviderOutputRef: row.safe_provider_output_ref,
+  };
+}
+
+test('completed storage reconciliation finalizes the original attempt without re-execution', async () => {
+  const pool = testPool();
+  await reset(pool);
+  const storage = new RecoveringStorage();
+  const state = await createUncertainStorageExecution(pool, storage);
+
+  const routeCalls = vi.spyOn(state.dependencies.routes, 'resolveAndValidateRoute');
+  const capacityAcquireCalls = vi.spyOn(state.dependencies.capacity, 'acquire');
+  const capacityReportCalls = vi.spyOn(state.dependencies.capacity, 'reportOutcome');
+  const capacityReleaseCalls = vi.spyOn(state.dependencies.capacity, 'release');
+  const providerCalls = vi.spyOn(state.dependencies.autoHub, 'startRun');
+  const authorizationCalls = vi.spyOn(storage, 'createOutputAuthorization');
   const callsBefore = {
+    route: routeCalls.mock.calls.length,
+    acquire: capacityAcquireCalls.mock.calls.length,
+    report: capacityReportCalls.mock.calls.length,
     release: capacityReleaseCalls.mock.calls.length,
     provider: providerCalls.mock.calls.length,
     authorization: authorizationCalls.mock.calls.length,
@@ -127,6 +154,19 @@ test('storage reconciliation finalizes a provider-success execution without redi
   await expect(
     reconcileNextStorageCompletion(pool, 'worker-reconcile', 60, state.dependencies),
   ).resolves.toBe(true);
+
+  expect(storage.reconciliationInputs).toEqual([
+    expect.objectContaining({
+      executionId: state.executionId,
+      attemptId: state.attemptId,
+      authorizationRef: state.authorizationRef,
+      safeProviderOutputRef: state.safeProviderOutputRef,
+      mimeType: 'image/png',
+    }),
+  ]);
+  expect(routeCalls).toHaveBeenCalledTimes(callsBefore.route);
+  expect(capacityAcquireCalls).toHaveBeenCalledTimes(callsBefore.acquire);
+  expect(capacityReportCalls).toHaveBeenCalledTimes(callsBefore.report);
   expect(capacityReleaseCalls).toHaveBeenCalledTimes(callsBefore.release);
   expect(providerCalls).toHaveBeenCalledTimes(callsBefore.provider);
   expect(authorizationCalls).toHaveBeenCalledTimes(callsBefore.authorization);
@@ -183,19 +223,71 @@ test('storage reconciliation finalizes a provider-success execution without redi
 });
 
 test('two workers cannot finalize the same storage reconciliation case twice', async () => {
-  const state = await createStorageReconciliationCase();
-  const results = await Promise.all([
-    reconcileNextStorageCompletion(state.pool, 'worker-a', 60, state.dependencies),
-    reconcileNextStorageCompletion(state.pool, 'worker-b', 60, state.dependencies),
-  ]);
-  expect(results.filter(Boolean)).toHaveLength(1);
+  const pool = testPool();
+  await reset(pool);
+  const storage = new RecoveringStorage(50);
+  const state = await createUncertainStorageExecution(pool, storage);
 
-  const stored = await state.pool.query<{ count: string }>(
-    `select count(*)::text as count
-       from execution.execution_status_transitions
-      where execution_id=$1 and reason_family='storage-completion-reconciled'`,
+  const outcomes = await Promise.all([
+    reconcileNextStorageCompletion(pool, 'worker-a', 60, state.dependencies),
+    reconcileNextStorageCompletion(pool, 'worker-b', 60, state.dependencies),
+  ]);
+  expect(outcomes.sort()).toEqual([false, true]);
+  expect(storage.reconciliationInputs).toHaveLength(1);
+
+  const counts = await pool.query<{ attempts: string; transitions: string }>(
+    `select
+       (select count(*) from execution.execution_attempts where execution_id=$1) as attempts,
+       (select count(*) from execution.execution_status_transitions
+         where execution_id=$1 and reason_family='storage-completion-reconciled') as transitions`,
     [state.executionId],
   );
-  expect(Number(stored.rows[0]?.count)).toBe(1);
-  await state.pool.end();
+  expect(Number(counts.rows[0]?.attempts)).toBe(1);
+  expect(Number(counts.rows[0]?.transitions)).toBe(1);
+  await pool.end();
+});
+
+test('a stale resolving claim is reclaimable after its deadline', async () => {
+  const pool = testPool();
+  await reset(pool);
+  const storage = new RecoveringStorage();
+  const state = await createUncertainStorageExecution(pool, storage);
+  await pool.query(
+    `update execution.execution_reconciliation_cases
+        set status='resolving', next_check_at=now()-interval '1 second'
+      where id=$1`,
+    [state.caseId],
+  );
+
+  await expect(
+    reconcileNextStorageCompletion(pool, 'worker-reclaim', 60, state.dependencies),
+  ).resolves.toBe(true);
+  const stored = await pool.query<{ status: string }>(
+    'select status from execution.executions where id=$1',
+    [state.executionId],
+  );
+  expect(stored.rows[0]?.status).toBe('succeeded');
+  await pool.end();
+});
+
+test('a storage case missing either persisted reference is not claimed', async () => {
+  const pool = testPool();
+  await reset(pool);
+  const storage = new RecoveringStorage();
+  const state = await createUncertainStorageExecution(pool, storage);
+  await pool.query(
+    'update execution.execution_attempts set output_authorization_ref=null where id=$1',
+    [state.attemptId],
+  );
+
+  await expect(
+    reconcileNextStorageCompletion(pool, 'worker-reconcile', 60, state.dependencies),
+  ).resolves.toBe(false);
+  expect(storage.reconciliationInputs).toHaveLength(0);
+  const stored = await pool.query<{ status: string }>(
+    'select status from execution.executions where id=$1',
+    [state.executionId],
+  );
+  expect(stored.rows[0]?.status).toBe('reconciliation-required');
+  await pool.end();
 });
