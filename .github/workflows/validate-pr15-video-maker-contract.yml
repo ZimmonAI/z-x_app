@@ -1,6 +1,9 @@
 name: Validate PR 15 Video Maker contract
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - agent/validate-pr15-video-maker-contract
