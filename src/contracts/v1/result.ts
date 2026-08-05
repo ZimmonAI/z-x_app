@@ -15,6 +15,9 @@ export const OwnerCorrelatedStorageOutputV1Schema = z
   .object({
     pendingResourceId: z.string().min(1),
     storageObjectId: z.string().min(1),
+    // Keep the legacy-only key visible to TypeScript union narrowing without
+    // accepting it in the strict owner-correlated runtime contract.
+    storageIdentity: z.never().optional(),
     ...technicalMetadata,
   })
   .strict();

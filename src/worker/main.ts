@@ -26,6 +26,10 @@ import {
   recoverExpiredLeases,
 } from './reconciliation.js';
 import { ShutdownController } from './shutdown.js';
+import {
+  recoverExpiredVideoMakerPhaseLeases,
+  runNextVideoMakerPhase,
+} from './video-maker-phase-engine.js';
 
 const config = loadConfig();
 if (!config.ZX_DATABASE_URL) {
@@ -124,14 +128,20 @@ function delay(milliseconds: number): Promise<void> {
 while (!shutdown.isStopping) {
   await observeControlRequest();
   if (shutdown.isStopping) break;
-  let progressed = false;
-
-  progressed = await reconcileNextStorageCompletion(
+  let progressed = await reconcileNextStorageCompletion(
     pool,
     config.ZX_WORKER_ID,
     config.ZX_WORKER_LEASE_SECONDS,
     dependencies,
   );
+
+  if (!progressed) {
+    progressed = await runNextVideoMakerPhase(
+      pool,
+      config.ZX_WORKER_ID,
+      config.ZX_WORKER_LEASE_SECONDS,
+    );
+  }
 
   if (!progressed && enabledOperations.size > 0) {
     progressed = await prepareManualRetry(
@@ -191,7 +201,9 @@ while (!shutdown.isStopping) {
 
   const now = Date.now();
   if (now - lastRecoveryAt >= 30_000) {
-    const recovered = await recoverExpiredLeases(pool);
+    const recoveredLegacy = await recoverExpiredLeases(pool);
+    const recoveredVideoMaker = await recoverExpiredVideoMakerPhaseLeases(pool);
+    const recovered = recoveredLegacy + recoveredVideoMaker;
     if (recovered > 0) logger.warn({ recovered }, 'expired execution leases recovered');
     lastRecoveryAt = now;
   }
