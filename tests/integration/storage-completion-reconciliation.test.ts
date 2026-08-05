@@ -200,12 +200,7 @@ test('completed storage reconciliation finalizes the original attempt without re
   const result = ExecutionResultV1Schema.parse(stored.rows[0]?.result_envelope);
   expect(result.attemptId).toBe(state.attemptId);
   expect(result.outputs).toHaveLength(1);
-  const output = result.outputs[0];
-  expect(output).toBeDefined();
-  if (!output || !('storageIdentity' in output)) {
-    throw new Error('expected legacy fixture storage output');
-  }
-  expect(output.storageIdentity).toMatch(/^zs:\/\/fixture\//);
+  expect(result.outputs[0]?.storageIdentity).toMatch(/^zs:\/\/fixture\//);
 
   await expect(
     reconcileNextStorageCompletion(pool, 'worker-reconcile-again', 60, state.dependencies),
