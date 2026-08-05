@@ -128,9 +128,7 @@ function delay(milliseconds: number): Promise<void> {
 while (!shutdown.isStopping) {
   await observeControlRequest();
   if (shutdown.isStopping) break;
-  let progressed = false;
-
-  progressed = await reconcileNextStorageCompletion(
+  let progressed = await reconcileNextStorageCompletion(
     pool,
     config.ZX_WORKER_ID,
     config.ZX_WORKER_LEASE_SECONDS,
