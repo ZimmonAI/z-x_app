@@ -18,7 +18,7 @@ BEGIN
   IF row_count > 0 OR video_maker_count > 0 THEN
     RAISE EXCEPTION 'refusing destructive rollback: video-maker execution data exists';
   END IF;
-END
+END;
 $$;
 
 DROP TRIGGER execution_phase_evidence_append_only ON execution.execution_phase_evidence;
@@ -65,7 +65,7 @@ BEGIN
     RAISE EXCEPTION 'execution identity and policy fields are immutable';
   END IF;
   RETURN NEW;
-END
+END;
 $$;
 
 ALTER TABLE execution.execution_requests
