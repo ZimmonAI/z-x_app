@@ -16,11 +16,13 @@ describe('owner storage reference persistence', () => {
     expect(reconciliation).not.toContain('createOutputAuthorization(');
   });
 
-  it('introduces no migration', async () => {
+  it('keeps the owner-storage migration history additive', async () => {
     const migrations = await readdir('migrations');
     expect(migrations).toEqual([
       '0001_execution_foundation_down.sql',
       '0001_execution_foundation_up.sql',
+      '0002_video_maker_phase_engine_down.sql',
+      '0002_video_maker_phase_engine_up.sql',
     ]);
   });
 });
