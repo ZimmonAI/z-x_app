@@ -24,22 +24,38 @@ if (expectedIds.some((id) => !apps.has(id)) || apps.size !== expectedIds.length)
 const fixtureAuth = apps.get('z-x-fixture-auth');
 const api = apps.get('z-x-execution-runner-api');
 const worker = apps.get('z-x-execution-runner-worker');
-if (fixtureAuth.role !== 'infrastructure') throw new Error('fixture auth role invalid');
-if (api.role !== 'main' || JSON.stringify(api.dependsOn) !== JSON.stringify(['z-x-fixture-auth'])) {
-  throw new Error('API dependency invalid');
+if (
+  fixtureAuth.role !== 'infrastructure' ||
+  fixtureAuth.port !== 3761 ||
+  fixtureAuth.healthCheckUrl !== 'http://127.0.0.1:3761/internal/health' ||
+  fixtureAuth.localUrl !== null ||
+  fixtureAuth.publicUrl !== null ||
+  fixtureAuth.actionsEnabled !== false ||
+  fixtureAuth.includeInGitSync !== true
+) {
+  throw new Error('fixture auth runtime manifest invalid');
 }
-if (worker.role !== 'support' || worker.parentAppId !== 'z-x-execution-runner-api') {
-  throw new Error('worker parent invalid');
+if (
+  api.role !== 'main' ||
+  JSON.stringify(api.dependsOn) !== JSON.stringify(['z-x-fixture-auth']) ||
+  api.port !== 3762 ||
+  api.healthCheckUrl !== 'http://127.0.0.1:3762/internal/health' ||
+  api.localUrl !== 'http://100.106.76.100:3762' ||
+  api.publicUrl !== null ||
+  api.actionsEnabled !== true ||
+  api.includeInGitSync !== true
+) {
+  throw new Error('API runtime manifest invalid');
 }
-for (const app of manifest.apps) {
-  if (
-    app.port !== null ||
-    app.healthCheckUrl !== null ||
-    app.localUrl !== null ||
-    app.publicUrl !== null ||
-    app.actionsEnabled !== false ||
-    app.includeInGitSync !== true
-  ) {
-    throw new Error(`runtime remains unresolved or disabled: ${app.id}`);
-  }
+if (
+  worker.role !== 'support' ||
+  worker.parentAppId !== 'z-x-execution-runner-api' ||
+  worker.port !== null ||
+  worker.healthCheckUrl !== null ||
+  worker.localUrl !== null ||
+  worker.publicUrl !== null ||
+  worker.actionsEnabled !== true ||
+  worker.includeInGitSync !== true
+) {
+  throw new Error('worker runtime manifest invalid');
 }
