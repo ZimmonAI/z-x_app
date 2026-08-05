@@ -12,6 +12,10 @@ import {
 } from './routes/executions.js';
 import { healthRoutes } from './routes/health.js';
 import { readinessRoutes } from './routes/readiness.js';
+import {
+  CompositeExecutionService,
+  PostgresVideoMakerExecutionService,
+} from './video-maker-execution-service.js';
 
 const MAX_RESPONSE_BYTES = 512 * 1024;
 
@@ -82,7 +86,10 @@ export async function buildServer(options: {
   const service =
     options.service ??
     (pool
-      ? new PostgresExecutionService(pool)
+      ? new CompositeExecutionService(
+          new PostgresExecutionService(pool),
+          new PostgresVideoMakerExecutionService(pool),
+        )
       : options.config.ZX_NODE_ENV === 'test'
         ? new MemoryExecutionService()
         : undefined);
