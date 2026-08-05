@@ -14,6 +14,12 @@ export default [
     }
   },
   {
+    files: ['src/clients/z-s-http.ts'],
+    rules: {
+      'no-control-regex': 'off'
+    }
+  },
+  {
     files: ['tests/**/*.ts'],
     languageOptions: {
       globals: { test: 'readonly', expect: 'readonly', describe: 'readonly', beforeEach: 'readonly', afterEach: 'readonly' }
