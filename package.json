@@ -10,7 +10,8 @@
   "packageManager": "npm@10.9.2",
   "main": "dist/src/api/main.js",
   "exports": {
-    "./contracts/v1": "./dist/src/contracts/v1/execution.js"
+    "./contracts/v1": "./dist/src/contracts/v1/execution.js",
+    "./contracts/video-maker/v1": "./dist/src/contracts/video-maker/v1/index.js"
   },
   "files": [
     "dist",
