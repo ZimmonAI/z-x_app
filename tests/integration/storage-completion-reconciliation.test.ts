@@ -56,7 +56,7 @@ class RecoveringStorage extends ZStorageFixtureV1 {
 function imageStorageRequest() {
   return {
     ...validRequest('image.generate.v1'),
-    safeScalarInputs: { prompt: 'cinematic sunrise' },
+    safeScalarInputs: { prompt: 'cinematic sunrise', fixtureScenario: 'success' },
     requestedOutputType: 'image/png',
     storageOutput: {
       contractVersion: 'zx.storage-output.v1',

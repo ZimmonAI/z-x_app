@@ -236,11 +236,13 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF NEW.selected_execution_method IS DISTINCT FROM CASE current_tool_key
-       WHEN 'consumer-gpt' THEN 'video-maker-consumer-gpt-fixture-v1'
-       WHEN 'google-flow' THEN 'video-maker-google-flow-fixture-v1'
-       ELSE NULL
-     END THEN
+  IF NEW.selected_execution_method IS DISTINCT FROM (
+       CASE current_tool_key
+         WHEN 'consumer-gpt' THEN 'video-maker-consumer-gpt-fixture-v1'
+         WHEN 'google-flow' THEN 'video-maker-google-flow-fixture-v1'
+         ELSE NULL
+       END
+     ) THEN
     RAISE EXCEPTION 'Video Maker execution method does not match tool key';
   END IF;
 
