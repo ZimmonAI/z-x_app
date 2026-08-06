@@ -101,10 +101,12 @@ async function createUncertainStorageExecution(
     case_id: string;
     case_status: string;
     next_check_at: Date;
+    case_is_due: boolean;
   }>(
     `select e.status as execution_status, a.status as attempt_status,
             a.output_authorization_ref, a.safe_provider_output_ref,
-            c.id as case_id, c.status as case_status, c.next_check_at
+            c.id as case_id, c.status as case_status, c.next_check_at,
+            c.next_check_at <= clock_timestamp() as case_is_due
        from execution.executions e
        join execution.execution_attempts a on a.id=$2 and a.execution_id=e.id
        join execution.execution_reconciliation_cases c
@@ -116,7 +118,7 @@ async function createUncertainStorageExecution(
   expect(row?.execution_status).toBe('reconciliation-required');
   expect(row?.attempt_status).toBe('reconciliation-required');
   expect(row?.case_status).toBe('open');
-  expect(row?.next_check_at.getTime()).toBeLessThanOrEqual(Date.now());
+  expect(row?.case_is_due).toBe(true);
   if (!row?.output_authorization_ref || !row.safe_provider_output_ref || !row.case_id) {
     throw new Error('expected persisted storage reconciliation references');
   }
