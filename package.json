@@ -11,7 +11,8 @@
   "main": "dist/src/api/main.js",
   "exports": {
     "./contracts/v1": "./dist/src/contracts/v1/execution.js",
-    "./contracts/video-maker/v1": "./dist/src/contracts/video-maker/v1/index.js"
+    "./contracts/video-maker/v1": "./dist/src/contracts/video-maker/v1/index.js",
+    "./catalog/v1": "./dist/src/catalog/v1/index.js"
   },
   "files": [
     "dist",
@@ -39,9 +40,9 @@
     "start:auth-fixture": "node --enable-source-maps dist/src/auth-fixture/main.js",
     "fixture-auth:mint": "node --enable-source-maps dist/src/auth-fixture/mint.js",
     "worker:request-stop": "node --enable-source-maps dist/src/worker/request-stop.js",
-    "db:migrate": "node --input-type=module -e \"import pg from 'pg';import fs from 'node:fs/promises';const u=process.env.ZX_TEST_DATABASE_URL;if(!u)throw new Error('ZX_TEST_DATABASE_URL required');const c=new pg.Client({connectionString:u});await c.connect();for(const f of ['migrations/0001_execution_foundation_up.sql','migrations/0002_video_maker_phase_engine_up.sql'])await c.query(await fs.readFile(f,'utf8'));await c.end();\"",
-    "db:rollback": "node --input-type=module -e \"import pg from 'pg';import fs from 'node:fs/promises';const u=process.env.ZX_TEST_DATABASE_URL;if(!u)throw new Error('ZX_TEST_DATABASE_URL required');const c=new pg.Client({connectionString:u});await c.connect();for(const f of ['migrations/0002_video_maker_phase_engine_down.sql','migrations/0001_execution_foundation_down.sql'])await c.query(await fs.readFile(f,'utf8'));await c.end();\"",
-    "package:validate": "node --input-type=module -e \"import p from './package.json' with {type:'json'};if(p.name!=='@zimspace/z-x-execution-runner'||p.type!=='module'||p.engines.node!=='>=22 <23'||p.main!=='dist/src/api/main.js'||p.scripts['start:worker']!=='node --enable-source-maps dist/src/worker/main.js'||p.scripts['start:auth-fixture']!=='node --enable-source-maps dist/src/auth-fixture/main.js'||p.scripts['fixture-auth:mint']!=='node --enable-source-maps dist/src/auth-fixture/mint.js'||p.scripts['worker:request-stop']!=='node --enable-source-maps dist/src/worker/request-stop.js'||!p.files.includes('scripts')||p.files.some(x=>x.includes('.runtime')))process.exit(1);for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies})){if(!/^\\d+\\.\\d+\\.\\d+$/.test(v))throw new Error('dependency not exact: '+n+'='+v)}\"",
+    "db:migrate": "node scripts/run-migrations.mjs up",
+    "db:rollback": "node scripts/run-migrations.mjs down",
+    "package:validate": "node --input-type=module -e \"import p from './package.json' with {type:'json'};if(p.name!=='@zimspace/z-x-execution-runner'||p.type!=='module'||p.engines.node!=='>=22 <23'||p.main!=='dist/src/api/main.js'||p.exports['./catalog/v1']!=='./dist/src/catalog/v1/index.js'||p.scripts['start:worker']!=='node --enable-source-maps dist/src/worker/main.js'||p.scripts['start:auth-fixture']!=='node --enable-source-maps dist/src/auth-fixture/main.js'||p.scripts['fixture-auth:mint']!=='node --enable-source-maps dist/src/auth-fixture/mint.js'||p.scripts['worker:request-stop']!=='node --enable-source-maps dist/src/worker/request-stop.js'||p.scripts['db:migrate']!=='node scripts/run-migrations.mjs up'||p.scripts['db:rollback']!=='node scripts/run-migrations.mjs down'||!p.files.includes('scripts')||p.files.some(x=>x.includes('.runtime')))process.exit(1);for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies})){if(!/^\\d+\\.\\d+\\.\\d+$/.test(v))throw new Error('dependency not exact: '+n+'='+v)}\"",
     "manifest:validate": "node scripts/validate-manifest.mjs"
   },
   "dependencies": {
