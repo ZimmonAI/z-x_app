@@ -23,6 +23,10 @@ class MemoryCatalogRepository implements CatalogRepository {
     return structuredClone(this.snapshot);
   }
 
+  async readScriptVersion(id: string): Promise<ScriptVersion | null> {
+    return structuredClone(this.snapshot.scriptVersions.find((script) => script.id === id) ?? null);
+  }
+
   async readBundleVersion(id: string): Promise<BundleVersion | null> {
     return structuredClone(this.snapshot.bundleVersions.find((bundle) => bundle.id === id) ?? null);
   }
@@ -45,6 +49,14 @@ class MemoryCatalogRepository implements CatalogRepository {
 
   async createScriptVersion(version: ScriptVersion): Promise<void> {
     this.snapshot.scriptVersions.push(structuredClone(version));
+  }
+
+  async publishScriptVersion(id: string): Promise<void> {
+    const script = this.snapshot.scriptVersions.find((candidate) => candidate.id === id);
+    if (!script) {
+      throw new Error('script version missing');
+    }
+    script.releaseStatus = 'published';
   }
 
   async createBundleDefinition(definition: BundleDefinition): Promise<void> {
@@ -91,18 +103,18 @@ test('rejects fake executable runtime package truth', async () => {
   ).rejects.toBeInstanceOf(CatalogValidationError);
 });
 
-test('publishes only after scripts and packages satisfy the release gate', async () => {
+test('publishes scripts and bundles only after package validation', async () => {
   const { snapshot } = catalogFixture();
   const repository = new MemoryCatalogRepository(snapshot);
   const service = new CatalogManagementService(repository);
 
+  await expect(service.publishScriptVersion('script-submit-v1')).rejects.toBeInstanceOf(
+    CatalogValidationError,
+  );
   await expect(service.publishBundleVersion('bundle-v1')).rejects.toBeInstanceOf(
     CatalogValidationError,
   );
 
-  for (const script of repository.snapshot.scriptVersions) {
-    script.releaseStatus = 'published';
-  }
   for (const runtimePackage of repository.snapshot.runtimePackages) {
     runtimePackage.validationStatus = 'valid';
     runtimePackage.executable = true;
@@ -111,8 +123,15 @@ test('publishes only after scripts and packages satisfy the release gate', async
     runtimePackage.entrypoint = `${runtimePackage.id}.mjs`;
   }
 
+  await service.publishScriptVersion('script-submit-v1');
+  await service.publishScriptVersion('script-poll-v1');
   await service.publishBundleVersion('bundle-v1');
+
+  expect(repository.snapshot.scriptVersions.every((script) => script.releaseStatus === 'published')).toBe(
+    true,
+  );
   expect(repository.snapshot.bundleVersions[0]?.releaseStatus).toBe('published');
+  expect((await service.readCatalogSnapshot()).manifestVersions).toHaveLength(6);
 });
 
 test('published definitions cannot be edited and are cloned into new drafts', async () => {
