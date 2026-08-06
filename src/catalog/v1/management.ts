@@ -18,12 +18,14 @@ import {
 
 export interface CatalogRepository {
   readSnapshot(): Promise<CatalogSnapshot>;
+  readScriptVersion(id: string): Promise<ScriptVersion | null>;
   readBundleVersion(id: string): Promise<BundleVersion | null>;
   createManifestDefinition(definition: ManifestDefinition): Promise<void>;
   createManifestVersion(version: ManifestVersion): Promise<void>;
   createScriptDefinition(definition: ScriptDefinition): Promise<void>;
   createRuntimePackage(runtimePackage: RuntimePackage): Promise<void>;
   createScriptVersion(version: ScriptVersion): Promise<void>;
+  publishScriptVersion(id: string): Promise<void>;
   createBundleDefinition(definition: BundleDefinition): Promise<void>;
   createBundleVersion(version: BundleVersion): Promise<void>;
   replaceDraftBundleVersion(version: BundleVersion): Promise<void>;
@@ -77,8 +79,59 @@ function cloneBindingSource(
   return { ...source };
 }
 
+function validateScriptPublication(
+  snapshot: CatalogSnapshot,
+  script: ScriptVersion,
+): CatalogValidationResult {
+  const issues: CatalogValidationResult['issues'] = [];
+  if (!snapshot.scriptDefinitions.some((definition) => definition.id === script.scriptDefinitionId)) {
+    issues.push({
+      code: 'missing-reference',
+      path: `scriptVersions.${script.id}.scriptDefinitionId`,
+      message: `script definition ${script.scriptDefinitionId} does not exist`,
+    });
+  }
+  const runtimePackage = snapshot.runtimePackages.find(
+    (candidate) => candidate.id === script.runtimePackageId,
+  );
+  if (!runtimePackage) {
+    issues.push({
+      code: 'missing-reference',
+      path: `scriptVersions.${script.id}.runtimePackageId`,
+      message: `runtime package ${script.runtimePackageId} does not exist`,
+    });
+  } else if (
+    runtimePackage.validationStatus !== 'valid' ||
+    !runtimePackage.executable ||
+    !runtimePackage.storageObjectRef ||
+    !runtimePackage.checksumSha256 ||
+    !runtimePackage.entrypoint
+  ) {
+    issues.push({
+      code: 'publication-gate',
+      path: `scriptVersions.${script.id}.runtimePackageId`,
+      message: 'published script versions require a validated executable package',
+    });
+  }
+  const manifestVersionIds = new Set(snapshot.manifestVersions.map((version) => version.id));
+  for (const usage of [...script.inputUsages, ...script.outputUsages]) {
+    if (!manifestVersionIds.has(usage.manifestVersionId)) {
+      issues.push({
+        code: 'missing-reference',
+        path: `scriptVersions.${script.id}.manifestUsages.${usage.id}`,
+        message: `manifest version ${usage.manifestVersionId} does not exist`,
+      });
+    }
+  }
+  return { valid: issues.length === 0, issues };
+}
+
 export class CatalogManagementService {
   constructor(private readonly repository: CatalogRepository) {}
+
+  async readCatalogSnapshot(): Promise<CatalogSnapshot> {
+    return structuredClone(await this.repository.readSnapshot());
+  }
 
   async createManifestDefinition(definition: ManifestDefinition): Promise<void> {
     await this.repository.createManifestDefinition(structuredClone(definition));
@@ -109,7 +162,36 @@ export class CatalogManagementService {
   }
 
   async createScriptVersion(version: ScriptVersion): Promise<void> {
+    if (version.releaseStatus === 'published') {
+      const result = validateScriptPublication(await this.repository.readSnapshot(), version);
+      if (!result.valid) {
+        throw new CatalogValidationError(result);
+      }
+    }
     await this.repository.createScriptVersion(structuredClone(version));
+  }
+
+  async readScriptVersion(id: string): Promise<ScriptVersion> {
+    const script = await this.repository.readScriptVersion(id);
+    if (!script) {
+      throw new CatalogNotFoundError('script version', id);
+    }
+    return structuredClone(script);
+  }
+
+  async publishScriptVersion(id: string): Promise<void> {
+    const [snapshot, script] = await Promise.all([
+      this.repository.readSnapshot(),
+      this.readScriptVersion(id),
+    ]);
+    if (script.releaseStatus === 'published') {
+      throw new CatalogImmutableError('script version is already published');
+    }
+    const result = validateScriptPublication(snapshot, script);
+    if (!result.valid) {
+      throw new CatalogValidationError(result);
+    }
+    await this.repository.publishScriptVersion(id);
   }
 
   async createBundleDefinition(definition: BundleDefinition): Promise<void> {
