@@ -1,14 +1,19 @@
 import fs from 'node:fs/promises';
 import pg from 'pg';
 
-const UP_MIGRATIONS = [
-  'migrations/0001_execution_foundation_up.sql',
-  'migrations/0002_video_maker_phase_engine_up.sql',
-] as const;
-const DOWN_MIGRATIONS = [
-  'migrations/0002_video_maker_phase_engine_down.sql',
-  'migrations/0001_execution_foundation_down.sql',
-] as const;
+interface MigrationEntry {
+  up: string;
+  down: string;
+  enabled: boolean;
+  expectedTableCountAfterUp: number;
+}
+
+async function enabledMigrations(): Promise<MigrationEntry[]> {
+  const manifest = JSON.parse(await fs.readFile('migrations/manifest.json', 'utf8')) as {
+    migrations: MigrationEntry[];
+  };
+  return manifest.migrations.filter((migration) => migration.enabled);
+}
 
 export function testPool(): pg.Pool {
   const url = process.env.ZX_TEST_DATABASE_URL;
@@ -18,15 +23,24 @@ export function testPool(): pg.Pool {
   return new pg.Pool({ connectionString: url, max: 4 });
 }
 
+export async function expectedTableCountAfterUp(): Promise<number> {
+  const migrations = await enabledMigrations();
+  const last = migrations.at(-1);
+  if (!last) {
+    throw new Error('migration manifest has no enabled migrations');
+  }
+  return last.expectedTableCountAfterUp;
+}
+
 export async function reset(pool: pg.Pool): Promise<void> {
   await pool.query('drop schema if exists execution cascade');
-  for (const migration of UP_MIGRATIONS) {
-    await pool.query(await fs.readFile(migration, 'utf8'));
+  for (const migration of await enabledMigrations()) {
+    await pool.query(await fs.readFile(migration.up, 'utf8'));
   }
 }
 
 export async function down(pool: pg.Pool): Promise<void> {
-  for (const migration of DOWN_MIGRATIONS) {
-    await pool.query(await fs.readFile(migration, 'utf8'));
+  for (const migration of (await enabledMigrations()).reverse()) {
+    await pool.query(await fs.readFile(migration.down, 'utf8'));
   }
 }
