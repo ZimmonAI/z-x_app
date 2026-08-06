@@ -58,7 +58,7 @@ export interface OwnerDeliveryReceiptV1 {
     deliveryRef: string;
     accepted: boolean;
 }
-export type FixtureScenario = 'success' | 'route-not-found' | 'route-deactivated' | 'invalid-parameters' | 'no-capacity' | 'login-required' | 'account-attention' | 'provider-rejected' | 'timeout' | 'malformed-output' | 'storage-failure' | 'callback-failure' | 'unknown-run';
+export type FixtureScenario = 'success' | 'route-not-found' | 'route-deactivated' | 'invalid-parameters' | 'no-capacity' | 'login-required' | 'account-attention' | 'provider-rejected' | 'timeout' | 'malformed-output' | 'storage-failure' | 'storage-reconciliation-pending' | 'storage-reconciliation-retryable-failure' | 'storage-reconciliation-terminal-failure' | 'callback-failure' | 'unknown-run';
 export interface ResolveRouteV1 {
     operation: OperationType;
     routeLocks: Record<string, string>;
@@ -104,11 +104,32 @@ export interface CreateOutputAuthorizationV1 {
     fixtureScenario?: FixtureScenario;
 }
 export interface CompleteOutputV1 {
+    executionId: string;
+    attemptId: string;
     authorizationRef: string;
     safeProviderOutputRef: string;
     mimeType: string;
     fixtureScenario?: FixtureScenario;
 }
+export interface ReconcileOutputV1 {
+    executionId: string;
+    attemptId: string;
+    authorizationRef: string;
+    safeProviderOutputRef: string;
+    mimeType: string;
+    fixtureScenario?: FixtureScenario;
+}
+export type OutputReconciliationV1 = {
+    status: 'completed';
+    result: StorageResultV1;
+} | {
+    status: 'pending';
+    retryAfterSeconds: number;
+} | {
+    status: 'failed';
+    errorCode: string;
+    retryable: boolean;
+};
 export interface CreateReadGrantV1 {
     resourceId: string;
 }
@@ -117,3 +138,5 @@ export interface OwnerDeliveryV1 {
     result: unknown;
     fixtureScenario?: FixtureScenario;
 }
+export declare function parseReconcileOutputV1(value: unknown): ReconcileOutputV1;
+export declare function parseOutputReconciliationV1(value: unknown): OutputReconciliationV1;

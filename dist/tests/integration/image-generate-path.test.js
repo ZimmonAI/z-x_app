@@ -7,7 +7,7 @@ import { validRequest } from '../unit/test-request.js';
 test('image.generate.v1 dispatches and returns stable Z-s identity', async () => {
     const request = {
         ...validRequest('image.generate.v1'),
-        safeScalarInputs: { prompt: 'cinematic sunrise' },
+        safeScalarInputs: { prompt: 'cinematic sunrise', fixtureScenario: 'success' },
         requestedOutputType: 'image/png',
     };
     const result = await executeFixturePath(request, '00000000-0000-4000-8000-000000000001', {

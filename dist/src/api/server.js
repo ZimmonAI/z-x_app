@@ -6,6 +6,7 @@ import { createAuthVerifier } from './auth.js';
 import { executionRoutes, MemoryExecutionService, PostgresExecutionService, } from './routes/executions.js';
 import { healthRoutes } from './routes/health.js';
 import { readinessRoutes } from './routes/readiness.js';
+import { CompositeExecutionService, PostgresVideoMakerExecutionService, } from './video-maker-execution-service.js';
 const MAX_RESPONSE_BYTES = 512 * 1024;
 function isDatabaseError(error) {
     if (!error || typeof error !== 'object')
@@ -60,7 +61,7 @@ export async function buildServer(options) {
         : createPool(options.config.ZX_DATABASE_URL);
     const service = options.service ??
         (pool
-            ? new PostgresExecutionService(pool)
+            ? new CompositeExecutionService(new PostgresExecutionService(pool), new PostgresVideoMakerExecutionService(pool))
             : options.config.ZX_NODE_ENV === 'test'
                 ? new MemoryExecutionService()
                 : undefined);

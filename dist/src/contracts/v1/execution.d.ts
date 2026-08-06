@@ -1,8 +1,10 @@
 import { z } from 'zod';
 export declare const CONTRACT_VERSION: "zx.execution.v1";
 export declare const FIXTURE_VERSION: "fixture-v1";
+export declare const OWNER_STORAGE_ACCESS_VERSION: "zx.owner-storage-access.v1";
 export declare const OPERATION_TYPES: readonly ["image_prompt.prepare.v1", "image.generate.v1", "scene_video_prompt.prepare.v1", "scene_video.generate.v1"];
 export type OperationType = (typeof OPERATION_TYPES)[number];
+export declare function isOpaqueOwnerCapabilityReference(value: string): boolean;
 export declare const StorageOutputRequestV1Schema: z.ZodObject<{
     contractVersion: z.ZodLiteral<"zx.storage-output.v1">;
     mode: z.ZodEnum<{
@@ -17,10 +19,23 @@ export declare const StorageOutputRequestV1Schema: z.ZodObject<{
     storageProfileRef: z.ZodOptional<z.ZodString>;
     maxBytes: z.ZodOptional<z.ZodNumber>;
 }, z.core.$strict>;
+export declare const OwnerStorageAccessV1Schema: z.ZodObject<{
+    contractVersion: z.ZodLiteral<"zx.owner-storage-access.v1">;
+    pendingResourceId: z.ZodString;
+    outputWriteGrantRef: z.ZodString;
+    artifactKind: z.ZodEnum<{
+        image: "image";
+        video: "video";
+    }>;
+    acceptedMimeTypes: z.ZodArray<z.ZodString>;
+    maxBytes: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strict>;
 export declare const ResourceReferenceV1Schema: z.ZodObject<{
     resourceId: z.ZodString;
     resourceVersionId: z.ZodOptional<z.ZodString>;
+    storageObjectId: z.ZodOptional<z.ZodString>;
     kind: z.ZodString;
+    role: z.ZodOptional<z.ZodString>;
     readGrantRef: z.ZodOptional<z.ZodString>;
     checksumSha256: z.ZodOptional<z.ZodString>;
 }, z.core.$strict>;
@@ -47,7 +62,9 @@ export declare const ExecutionRequestV1Schema: z.ZodObject<{
     frozenInputResources: z.ZodArray<z.ZodObject<{
         resourceId: z.ZodString;
         resourceVersionId: z.ZodOptional<z.ZodString>;
+        storageObjectId: z.ZodOptional<z.ZodString>;
         kind: z.ZodString;
+        role: z.ZodOptional<z.ZodString>;
         readGrantRef: z.ZodOptional<z.ZodString>;
         checksumSha256: z.ZodOptional<z.ZodString>;
     }, z.core.$strict>>;
@@ -60,6 +77,17 @@ export declare const ExecutionRequestV1Schema: z.ZodObject<{
         runMode: z.ZodDefault<z.ZodString>;
     }, z.core.$strict>;
     requestedOutputType: z.ZodString;
+    ownerStorageAccess: z.ZodOptional<z.ZodObject<{
+        contractVersion: z.ZodLiteral<"zx.owner-storage-access.v1">;
+        pendingResourceId: z.ZodString;
+        outputWriteGrantRef: z.ZodString;
+        artifactKind: z.ZodEnum<{
+            image: "image";
+            video: "video";
+        }>;
+        acceptedMimeTypes: z.ZodArray<z.ZodString>;
+        maxBytes: z.ZodOptional<z.ZodNumber>;
+    }, z.core.$strict>>;
     storageOutput: z.ZodOptional<z.ZodObject<{
         contractVersion: z.ZodLiteral<"zx.storage-output.v1">;
         mode: z.ZodEnum<{
@@ -87,3 +115,5 @@ export declare const ExecutionRequestV1Schema: z.ZodObject<{
 }, z.core.$strict>;
 export type ExecutionRequestV1 = z.infer<typeof ExecutionRequestV1Schema>;
 export type StorageOutputRequestV1 = z.infer<typeof StorageOutputRequestV1Schema>;
+export type OwnerStorageAccessV1 = z.infer<typeof OwnerStorageAccessV1Schema>;
+export type OwnerInputResourceV1 = z.infer<typeof ResourceReferenceV1Schema>;

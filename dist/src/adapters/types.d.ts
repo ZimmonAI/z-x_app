@@ -15,6 +15,10 @@ export interface AdapterContext {
         externalRunRef?: string;
         safeProviderOutputRef: string;
     }): Promise<void>;
+    /**
+     * Compatibility persistence slot. For owner-led requests this stores the opaque
+     * owner/delegated output access reference; Z-X does not create that authority.
+     */
     recordOutputAuthorization(authorizationRef: string): Promise<void>;
 }
 export interface AdapterOutput {

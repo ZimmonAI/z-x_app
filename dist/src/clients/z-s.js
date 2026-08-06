@@ -1,2 +1,5 @@
-export function createRealZStorageClient() { throw new Error('real Z-s client disabled pending owner-published contract'); }
+import { ZStorageHttpClient, } from './z-s-http.js';
+export function createRealZStorageClient(options) {
+    return new ZStorageHttpClient(options);
+}
 //# sourceMappingURL=z-s.js.map

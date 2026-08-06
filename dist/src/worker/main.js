@@ -2,6 +2,7 @@ import { AutoHubFixtureV1 } from '../../fixtures/v1/auto-hub.js';
 import { ZAccountFixtureV1 } from '../../fixtures/v1/z-account.js';
 import { ZProviderFixtureV1 } from '../../fixtures/v1/z-provider.js';
 import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';
+import { createRealZStorageClient } from '../clients/z-s.js';
 import { loadConfig } from '../config.js';
 import { SafeExecutionError } from '../contracts/v1/error.js';
 import { createLogger } from '../observability/logger.js';
@@ -10,8 +11,9 @@ import { claimNext } from './claim.js';
 import { observeWorkerStopRequest, writeWorkerStopAcknowledgement, } from './control.js';
 import { startHeartbeatLoop } from './heartbeat.js';
 import { completeClaimedExecution, prepareNextExecution, } from './lifecycle.js';
-import { prepareManualRetry, recoverExpiredLeases } from './reconciliation.js';
+import { prepareManualRetry, reconcileNextStorageCompletion, recoverExpiredLeases, } from './reconciliation.js';
 import { ShutdownController } from './shutdown.js';
+import { recoverExpiredVideoMakerPhaseLeases, runNextVideoMakerPhase, } from './video-maker-phase-engine.js';
 const config = loadConfig();
 if (!config.ZX_DATABASE_URL) {
     throw new Error('ZX_DATABASE_URL required to start worker');
@@ -37,6 +39,17 @@ const logger = createLogger(config.ZX_LOG_LEVEL);
 const pool = createPool(config.ZX_DATABASE_URL);
 const shutdown = new ShutdownController();
 const routeFixture = new ZProviderFixtureV1();
+function createStorageClient() {
+    if (!config.ZX_FEATURE_REAL_Z_S_ENABLED)
+        return new ZStorageFixtureV1();
+    if (!config.ZX_Z_S_BASE_URL || !config.ZX_Z_S_BEARER_TOKEN) {
+        throw new Error('real Z-s configuration is incomplete');
+    }
+    return createRealZStorageClient({
+        baseUrl: config.ZX_Z_S_BASE_URL,
+        bearerToken: config.ZX_Z_S_BEARER_TOKEN,
+    });
+}
 const dependencies = {
     routes: {
         async resolveAndValidateRoute(input, signal) {
@@ -55,7 +68,7 @@ const dependencies = {
     },
     capacity: new ZAccountFixtureV1(),
     autoHub: new AutoHubFixtureV1(),
-    storage: new ZStorageFixtureV1(),
+    storage: createStorageClient(),
 };
 const abortControllers = new Set();
 let lastRecoveryAt = 0;
@@ -87,8 +100,11 @@ while (!shutdown.isStopping) {
     await observeControlRequest();
     if (shutdown.isStopping)
         break;
-    let progressed = false;
-    if (enabledOperations.size > 0) {
+    let progressed = await reconcileNextStorageCompletion(pool, config.ZX_WORKER_ID, config.ZX_WORKER_LEASE_SECONDS, dependencies);
+    if (!progressed) {
+        progressed = await runNextVideoMakerPhase(pool, config.ZX_WORKER_ID, config.ZX_WORKER_LEASE_SECONDS);
+    }
+    if (!progressed && enabledOperations.size > 0) {
         progressed = await prepareManualRetry(pool, config.ZX_WORKER_ID, config.ZX_WORKER_LEASE_SECONDS, dependencies);
         if (!progressed) {
             progressed = await prepareNextExecution(pool, config.ZX_WORKER_ID, config.ZX_WORKER_LEASE_SECONDS, dependencies);
@@ -119,7 +135,9 @@ while (!shutdown.isStopping) {
     }
     const now = Date.now();
     if (now - lastRecoveryAt >= 30_000) {
-        const recovered = await recoverExpiredLeases(pool);
+        const recoveredLegacy = await recoverExpiredLeases(pool);
+        const recoveredVideoMaker = await recoverExpiredVideoMakerPhaseLeases(pool);
+        const recovered = recoveredLegacy + recoveredVideoMaker;
         if (recovered > 0)
             logger.warn({ recovered }, 'expired execution leases recovered');
         lastRecoveryAt = now;

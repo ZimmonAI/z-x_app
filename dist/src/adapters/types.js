@@ -37,6 +37,39 @@ export function requiredScalarString(request, key) {
 }
 export async function dispatchAndStoreMedia(context, kind) {
     const scenario = fixtureScenario(context.request);
+    const ownerStorageAccess = context.request.ownerStorageAccess;
+    // Fixture compatibility is explicit. Every non-fixture generated-media request
+    // must carry owner-issued access, and the reference is persisted before any
+    // provider action. The delegated Z-s transport is not owner-published yet, so
+    // real execution stops truthfully at this exact pre-dispatch boundary.
+    if (scenario === undefined) {
+        if (!ownerStorageAccess) {
+            throw new SafeExecutionError({
+                family: 'invalid-owner-request',
+                code: 'ZX_OWNER_STORAGE_ACCESS_REQUIRED',
+                message: 'owner-issued storage access is required for real generated media',
+                retryable: false,
+                traceId: context.request.traceId,
+            });
+        }
+        if (ownerStorageAccess.artifactKind !== kind) {
+            throw new SafeExecutionError({
+                family: 'invalid-owner-request',
+                code: 'ZX_OWNER_STORAGE_ARTIFACT_KIND_MISMATCH',
+                message: 'owner-issued storage access does not match the generated artifact kind',
+                retryable: false,
+                traceId: context.request.traceId,
+            });
+        }
+        await context.recordOutputAuthorization(ownerStorageAccess.outputWriteGrantRef);
+        throw new SafeExecutionError({
+            family: 'adapter-unavailable',
+            code: 'ZX_Z_S_DELEGATED_OUTPUT_NOT_READY',
+            message: 'the delegated owner-issued Z-s output transport is not ready',
+            retryable: true,
+            traceId: context.request.traceId,
+        });
+    }
     const storageOutput = context.request.storageOutput;
     const mode = storageOutput?.mode ?? 'post-run-ingest';
     if (mode === 'direct-write') {
@@ -112,6 +145,8 @@ export async function dispatchAndStoreMedia(context, kind) {
     }, context.signal);
     await context.recordOutputAuthorization(authorization.authorizationRef);
     const media = await context.storage.completeOrIngestOutput({
+        executionId: context.executionId,
+        attemptId: context.attemptId,
         authorizationRef: authorization.authorizationRef,
         safeProviderOutputRef: run.safeOutputRef,
         mimeType,

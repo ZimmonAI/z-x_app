@@ -3,6 +3,14 @@ const booleanFromEnvironment = z
     .enum(['true', 'false'])
     .transform((value) => value === 'true');
 const optionalUrl = z.string().url().optional();
+const optionalHttpUrl = z
+    .string()
+    .url()
+    .refine((value) => {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+}, 'must use HTTP or HTTPS')
+    .optional();
 const configSchema = z
     .object({
     ZX_NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -31,10 +39,12 @@ const configSchema = z
     ZX_Z_PROVIDER_BASE_URL: optionalUrl,
     ZX_Z_ACCOUNT_BASE_URL: optionalUrl,
     ZX_AUTO_HUB_BASE_URL: optionalUrl,
-    ZX_Z_S_BASE_URL: optionalUrl,
+    ZX_Z_S_BASE_URL: optionalHttpUrl,
+    ZX_Z_S_BEARER_TOKEN: z.string().trim().min(1).optional(),
     ZX_VIDEO_MAKER_CALLBACK_BASE_URL: optionalUrl,
     ZX_FEATURE_CALLBACKS_ENABLED: booleanFromEnvironment.default(false),
     ZX_FEATURE_REAL_DEPENDENCIES_ENABLED: booleanFromEnvironment.default(false),
+    ZX_FEATURE_REAL_Z_S_ENABLED: booleanFromEnvironment.default(false),
     ZX_FEATURE_IMAGE_PROMPT_PREPARE_ENABLED: booleanFromEnvironment.default(false),
     ZX_FEATURE_IMAGE_GENERATE_ENABLED: booleanFromEnvironment.default(false),
     ZX_FEATURE_SCENE_VIDEO_PROMPT_PREPARE_ENABLED: booleanFromEnvironment.default(false),
@@ -65,7 +75,6 @@ const configSchema = z
             'ZX_Z_PROVIDER_BASE_URL',
             'ZX_Z_ACCOUNT_BASE_URL',
             'ZX_AUTO_HUB_BASE_URL',
-            'ZX_Z_S_BASE_URL',
         ];
         for (const key of required) {
             if (!config[key]) {
@@ -75,6 +84,22 @@ const configSchema = z
                     message: `${key} is required when real dependencies are enabled`,
                 });
             }
+        }
+    }
+    if (config.ZX_FEATURE_REAL_Z_S_ENABLED) {
+        if (!config.ZX_Z_S_BASE_URL) {
+            context.addIssue({
+                code: 'custom',
+                path: ['ZX_Z_S_BASE_URL'],
+                message: 'Z-s base URL is required when real Z-s is enabled',
+            });
+        }
+        if (!config.ZX_Z_S_BEARER_TOKEN) {
+            context.addIssue({
+                code: 'custom',
+                path: ['ZX_Z_S_BEARER_TOKEN'],
+                message: 'Z-s bearer token is required when real Z-s is enabled',
+            });
         }
     }
 });

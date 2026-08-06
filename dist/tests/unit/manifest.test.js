@@ -11,20 +11,35 @@ test('manifest uses root apps with exact auth, API, and worker relationships', a
     const fixtureAuth = manifest.apps[0];
     const api = manifest.apps[1];
     const worker = manifest.apps[2];
-    expect(fixtureAuth?.role).toBe('infrastructure');
-    expect(api?.dependsOn).toEqual(['z-x-fixture-auth']);
+    expect(fixtureAuth).toMatchObject({
+        role: 'infrastructure',
+        port: 3761,
+        healthCheckUrl: 'http://127.0.0.1:3761/internal/health',
+        localUrl: null,
+        publicUrl: null,
+        actionsEnabled: false,
+        includeInGitSync: true,
+    });
+    expect(api).toMatchObject({
+        role: 'main',
+        dependsOn: ['z-x-fixture-auth'],
+        port: 3762,
+        healthCheckUrl: 'http://127.0.0.1:3762/internal/health',
+        localUrl: 'http://100.106.76.100:3762',
+        publicUrl: null,
+        actionsEnabled: true,
+        includeInGitSync: true,
+    });
     expect(worker).toMatchObject({
         role: 'support',
         parentAppId: 'z-x-execution-runner-api',
+        port: null,
+        healthCheckUrl: null,
+        localUrl: null,
+        publicUrl: null,
+        actionsEnabled: true,
+        includeInGitSync: true,
     });
-    for (const app of manifest.apps) {
-        expect(app.port).toBeNull();
-        expect(app.healthCheckUrl).toBeNull();
-        expect(app.localUrl).toBeNull();
-        expect(app.publicUrl).toBeNull();
-        expect(app.actionsEnabled).toBe(false);
-        expect(app.includeInGitSync).toBe(true);
-    }
 });
 test('runtime control artifacts are ignored and excluded from package output', async () => {
     const gitignore = await readFile('.gitignore', 'utf8');

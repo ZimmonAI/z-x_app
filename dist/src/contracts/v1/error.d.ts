@@ -3,12 +3,13 @@ export declare const SAFE_ERROR_FAMILIES: readonly ["invalid-owner-request", "ro
 export declare const SafeErrorV1Schema: z.ZodObject<{
     family: z.ZodEnum<{
         cancelled: "cancelled";
+        "reconciliation-required": "reconciliation-required";
+        timeout: "timeout";
         "route-not-found": "route-not-found";
         "route-deactivated": "route-deactivated";
         "login-required": "login-required";
         "account-attention": "account-attention";
         "provider-rejected": "provider-rejected";
-        timeout: "timeout";
         "malformed-output": "malformed-output";
         "callback-failure": "callback-failure";
         "invalid-owner-request": "invalid-owner-request";
@@ -16,7 +17,6 @@ export declare const SafeErrorV1Schema: z.ZodObject<{
         "no-eligible-capacity": "no-eligible-capacity";
         "adapter-unavailable": "adapter-unavailable";
         "storage-output-failure": "storage-output-failure";
-        "reconciliation-required": "reconciliation-required";
         "internal-safe-failure": "internal-safe-failure";
     }>;
     code: z.ZodString;

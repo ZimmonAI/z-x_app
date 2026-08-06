@@ -33,12 +33,17 @@ declare const configSchema: z.ZodObject<{
     ZX_Z_ACCOUNT_BASE_URL: z.ZodOptional<z.ZodString>;
     ZX_AUTO_HUB_BASE_URL: z.ZodOptional<z.ZodString>;
     ZX_Z_S_BASE_URL: z.ZodOptional<z.ZodString>;
+    ZX_Z_S_BEARER_TOKEN: z.ZodOptional<z.ZodString>;
     ZX_VIDEO_MAKER_CALLBACK_BASE_URL: z.ZodOptional<z.ZodString>;
     ZX_FEATURE_CALLBACKS_ENABLED: z.ZodDefault<z.ZodPipe<z.ZodEnum<{
         true: "true";
         false: "false";
     }>, z.ZodTransform<boolean, "true" | "false">>>;
     ZX_FEATURE_REAL_DEPENDENCIES_ENABLED: z.ZodDefault<z.ZodPipe<z.ZodEnum<{
+        true: "true";
+        false: "false";
+    }>, z.ZodTransform<boolean, "true" | "false">>>;
+    ZX_FEATURE_REAL_Z_S_ENABLED: z.ZodDefault<z.ZodPipe<z.ZodEnum<{
         true: "true";
         false: "false";
     }>, z.ZodTransform<boolean, "true" | "false">>>;

@@ -1,7 +1,10 @@
-import type { CreateOutputAuthorizationV1, CompleteOutputV1, CreateReadGrantV1, OutputAuthorizationV1, StorageResultV1, ReadGrantV1 } from '../contracts/v1/dependencies.js';
+import type { CreateOutputAuthorizationV1, CompleteOutputV1, CreateReadGrantV1, OutputAuthorizationV1, StorageResultV1, ReadGrantV1, ReconcileOutputV1, OutputReconciliationV1 } from '../contracts/v1/dependencies.js';
+import { type ZStorageHttpClientOptions } from './z-s-http.js';
 export interface ZStorageClient {
-    createOutputAuthorization(i: CreateOutputAuthorizationV1, s: AbortSignal): Promise<OutputAuthorizationV1>;
-    completeOrIngestOutput(i: CompleteOutputV1, s: AbortSignal): Promise<StorageResultV1>;
-    createReadGrant(i: CreateReadGrantV1, s: AbortSignal): Promise<ReadGrantV1>;
+    createOutputAuthorization(input: CreateOutputAuthorizationV1, signal: AbortSignal): Promise<OutputAuthorizationV1>;
+    completeOrIngestOutput(input: CompleteOutputV1, signal: AbortSignal): Promise<StorageResultV1>;
+    reconcileOutput(input: ReconcileOutputV1, signal: AbortSignal): Promise<OutputReconciliationV1>;
+    createReadGrant(input: CreateReadGrantV1, signal: AbortSignal): Promise<ReadGrantV1>;
 }
-export declare function createRealZStorageClient(): ZStorageClient;
+export type { ZStorageHttpClientOptions };
+export declare function createRealZStorageClient(options: ZStorageHttpClientOptions): ZStorageClient;

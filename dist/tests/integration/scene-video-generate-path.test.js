@@ -7,7 +7,7 @@ import { validRequest } from '../unit/test-request.js';
 test('scene_video.generate.v1 dispatches and stores validated video', async () => {
     const request = {
         ...validRequest('scene_video.generate.v1'),
-        safeScalarInputs: { prompt: 'slow camera move' },
+        safeScalarInputs: { prompt: 'slow camera move', fixtureScenario: 'success' },
         frozenInputResources: [{ resourceId: 'image-1', kind: 'start-image' }],
         requestedOutputType: 'video/mp4',
     };
