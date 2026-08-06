@@ -40,13 +40,27 @@ function publicRequestUrl(request: IncomingMessage): string {
   return `/${normalizedPath}${query ? `?${query}` : ''}`;
 }
 
+function sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
+  response.statusCode = statusCode;
+  response.setHeader('content-type', 'application/json; charset=utf-8');
+  response.end(JSON.stringify(body));
+}
+
 export default async function handler(
   request: IncomingMessage,
   response: ServerResponse,
 ): Promise<void> {
+  request.url = publicRequestUrl(request);
+  const pathname = new URL(request.url, 'http://vercel.internal').pathname;
+
+  // Liveness must not depend on database or identity-provider availability.
+  if (request.method === 'GET' && pathname === '/internal/health') {
+    sendJson(response, 200, { status: 'alive' });
+    return;
+  }
+
   try {
     const application = await getApplication();
-    request.url = publicRequestUrl(request);
 
     await new Promise<void>((resolve, reject) => {
       const finish = () => {
@@ -70,14 +84,19 @@ export default async function handler(
     });
   } catch (error) {
     console.error('[vercel] request failed', {
+      method: request.method,
+      pathname,
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
 
     if (!response.headersSent) {
-      response.statusCode = 503;
-      response.setHeader('content-type', 'application/json; charset=utf-8');
-      response.end(JSON.stringify({ error: 'application unavailable' }));
+      if (pathname === '/internal/readiness') {
+        sendJson(response, 503, { status: 'not-ready' });
+        return;
+      }
+
+      sendJson(response, 503, { error: 'application unavailable' });
       return;
     }
 
