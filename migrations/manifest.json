@@ -1,0 +1,28 @@
+{
+  "schema": "execution",
+  "migrations": [
+    {
+      "id": "0001-execution-foundation",
+      "up": "migrations/0001_execution_foundation_up.sql",
+      "down": "migrations/0001_execution_foundation_down.sql",
+      "enabled": true,
+      "expectedTableCountAfterUp": 6
+    },
+    {
+      "id": "0002-video-maker-phase-engine",
+      "up": "migrations/0002_video_maker_phase_engine_up.sql",
+      "down": "migrations/0002_video_maker_phase_engine_down.sql",
+      "enabled": true,
+      "expectedTableCountAfterUp": 8
+    },
+    {
+      "id": "0003-normalized-script-bundle-foundation",
+      "up": "migrations/0003_normalized_script_bundle_foundation_up.sql",
+      "down": "migrations/0003_normalized_script_bundle_foundation_down.sql",
+      "enabled": false,
+      "revisionKey": "normalized-script-bundle-foundation-v1",
+      "expectedTableCountAfterUp": 56,
+      "blockedBy": "authoritative reviewed live migration SQL and rollback SQL are not yet supplied"
+    }
+  ]
+}

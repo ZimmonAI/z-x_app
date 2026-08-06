@@ -1,6 +1,6 @@
-import { down, reset, testPool } from './db-helper.js';
+import { down, expectedTableCountAfterUp, reset, testPool } from './db-helper.js';
 
-test('migration up, rollback, and reapply preserve the additive phase schema', async () => {
+test('migration up, rollback, and reapply preserve the enabled schema', async () => {
   const pool = testPool();
   await reset(pool);
   expect(
@@ -9,7 +9,7 @@ test('migration up, rollback, and reapply preserve the additive phase schema', a
         "select count(*)::int n from information_schema.tables where table_schema='execution'",
       )
     ).rows[0].n,
-  ).toBe(8);
+  ).toBe(await expectedTableCountAfterUp());
   expect(
     (await pool.query("select obj_description('execution.executions'::regclass) c")).rows[0].c,
   ).toContain('Ref: z-kn/');
