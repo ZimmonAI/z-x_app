@@ -66,7 +66,7 @@ export interface BundleDefinition {
   description: string;
 }
 
-export interface BundleManifestUsage extends ManifestUsage {}
+export type BundleManifestUsage = ManifestUsage;
 
 export interface StepPolicy {
   maxAttempts: number;
