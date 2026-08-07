@@ -162,6 +162,11 @@ test('published definitions cannot be edited and are cloned into new drafts', as
     kind: 'step-output',
     sourceStepId: draft.steps[0]?.id,
   });
+  expect(draft.steps[1]?.runtimeAffinityBindings[0]).toMatchObject({
+    scope: 'account',
+    sourceStepId: draft.steps[0]?.id,
+    required: true,
+  });
   expect(repository.snapshot.bundleVersions).toHaveLength(2);
 });
 
