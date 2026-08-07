@@ -1,17 +1,35 @@
+import { validateRuntimeAffinityBindings } from '../../src/catalog/v1/runtime-affinity.js';
 import { validateBundleVersion } from '../../src/catalog/v1/validation.js';
 import { catalogFixture } from './catalog-fixture.js';
 
-test('validates a reusable two-step draft with normalized prior-step binding', () => {
+test('validates a reusable two-step draft with session and account-affinity bindings', () => {
   const { snapshot, bundle } = catalogFixture();
   const result = validateBundleVersion(snapshot, bundle);
 
   expect(result).toEqual({ valid: true, issues: [] });
+  expect(validateRuntimeAffinityBindings(bundle)).toEqual({ valid: true, issues: [] });
   expect(bundle.inputUsages).toHaveLength(3);
   expect(bundle.steps).toHaveLength(2);
   expect(bundle.steps[1]?.inputBindings[0]?.source).toEqual({
     kind: 'step-output',
     sourceStepId: 'step-submit',
-    sourceScriptOutputUsageId: 'submit-output-job',
+    sourceScriptOutputUsageId: 'submit-output-session',
+  });
+  expect(bundle.steps[1]?.runtimeAffinityBindings).toEqual([
+    {
+      id: 'affinity-poll-account',
+      scope: 'account',
+      sourceStepId: 'step-submit',
+      required: true,
+    },
+  ]);
+  expect(bundle.steps[0]?.policy).toMatchObject({
+    maxAttempts: 3,
+    nextAttemptIntervalSeconds: 5,
+  });
+  expect(bundle.steps[1]?.policy).toMatchObject({
+    maxAttempts: 5,
+    nextAttemptIntervalSeconds: 30,
   });
   expect(bundle.outputUsages.find((usage) => usage.usageKey === 'generatedVideo')).toMatchObject({
     required: false,
@@ -29,6 +47,19 @@ test('rejects future-step output bindings', () => {
   source.sourceStepId = 'step-poll';
 
   const result = validateBundleVersion(snapshot, bundle);
+  expect(result.valid).toBe(false);
+  expect(result.issues.some((issue) => issue.code === 'future-step-binding')).toBe(true);
+});
+
+test('rejects future-step account affinity bindings', () => {
+  const { bundle } = catalogFixture();
+  const affinity = bundle.steps[1]?.runtimeAffinityBindings[0];
+  if (!affinity) {
+    throw new Error('expected account affinity fixture binding');
+  }
+  affinity.sourceStepId = 'step-poll';
+
+  const result = validateRuntimeAffinityBindings(bundle);
   expect(result.valid).toBe(false);
   expect(result.issues.some((issue) => issue.code === 'future-step-binding')).toBe(true);
 });
@@ -74,4 +105,5 @@ test('blocks publication until real script packages are validated', () => {
     packageExecutable: true,
   });
   expect(validateBundleVersion(ready.snapshot, ready.bundle)).toEqual({ valid: true, issues: [] });
+  expect(validateRuntimeAffinityBindings(ready.bundle)).toEqual({ valid: true, issues: [] });
 });
