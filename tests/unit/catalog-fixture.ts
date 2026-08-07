@@ -19,11 +19,11 @@ export function catalogFixture(options: {
   const packageExecutable = options.packageExecutable ?? false;
 
   const manifestDefinitions = [
-    ['manifest-prompt', 'prompt'],
-    ['manifest-beginning', 'beginning-image'],
-    ['manifest-ending', 'ending-image'],
-    ['manifest-job', 'job-reference'],
-    ['manifest-report', 'generation-report'],
+    ['manifest-prompt', 'prompt-text'],
+    ['manifest-beginning', 'beginning-frame-image'],
+    ['manifest-ending', 'ending-frame-image'],
+    ['manifest-session', 'leonardo-generation-session'],
+    ['manifest-report', 'leonardo-generation-report'],
     ['manifest-video', 'generated-video'],
   ].map(([id, manifestKey]) => ({
     id: id ?? '',
@@ -64,8 +64,18 @@ export function catalogFixture(options: {
   ];
 
   const scriptDefinitions = [
-    { id: 'script-submit', scriptKey: 'submit', displayName: 'Submit', description: 'Submit' },
-    { id: 'script-poll', scriptKey: 'poll', displayName: 'Poll', description: 'Poll' },
+    {
+      id: 'script-submit',
+      scriptKey: 'leonardo-video-submit',
+      displayName: 'Leonardo Video Submit',
+      description: 'Submit one Leonardo image-to-video generation and confirm processing.',
+    },
+    {
+      id: 'script-poll',
+      scriptKey: 'leonardo-video-poll-and-report',
+      displayName: 'Leonardo Video Poll and Report',
+      description: 'Poll one Leonardo generation, persist successful video, and report provider outcome.',
+    },
   ];
 
   const scriptVersions = [
@@ -107,9 +117,9 @@ export function catalogFixture(options: {
       ],
       outputUsages: [
         {
-          id: 'submit-output-job',
-          manifestVersionId: 'manifest-job-v1',
-          usageKey: 'jobReference',
+          id: 'submit-output-session',
+          manifestVersionId: 'manifest-session-v1',
+          usageKey: 'generationSession',
           required: true,
           minItems: 1,
           maxItems: 1,
@@ -126,9 +136,9 @@ export function catalogFixture(options: {
       releaseStatus: scriptStatus,
       inputUsages: [
         {
-          id: 'poll-input-job',
-          manifestVersionId: 'manifest-job-v1',
-          usageKey: 'jobReference',
+          id: 'poll-input-session',
+          manifestVersionId: 'manifest-session-v1',
+          usageKey: 'generationSession',
           required: true,
           minItems: 1,
           maxItems: 1,
@@ -221,7 +231,7 @@ export function catalogFixture(options: {
         scriptVersionId: 'script-submit-v1',
         tags: ['descriptive-only'],
         policy: {
-          maxAttempts: 2,
+          maxAttempts: 3,
           nextAttemptIntervalSeconds: 5,
           maxScriptRuntimeSeconds: 60,
           leaseSeconds: 90,
@@ -246,30 +256,39 @@ export function catalogFixture(options: {
             source: { kind: 'bundle-input', bundleInputUsageId: 'bundle-input-ending' },
           },
         ],
+        runtimeAffinityBindings: [],
       },
       {
         id: 'step-poll',
-        stepKey: 'poll',
-        displayName: 'Poll',
+        stepKey: 'completion-check',
+        displayName: 'Completion Check',
         stepOrder: 2,
         scriptVersionId: 'script-poll-v1',
         tags: [],
         policy: {
-          maxAttempts: 20,
+          maxAttempts: 5,
           nextAttemptIntervalSeconds: 30,
           maxScriptRuntimeSeconds: 60,
           leaseSeconds: 90,
         },
         inputBindings: [
           {
-            id: 'binding-poll-job',
-            targetScriptInputUsageId: 'poll-input-job',
+            id: 'binding-poll-session',
+            targetScriptInputUsageId: 'poll-input-session',
             bindingOrder: 1,
             source: {
               kind: 'step-output',
               sourceStepId: 'step-submit',
-              sourceScriptOutputUsageId: 'submit-output-job',
+              sourceScriptOutputUsageId: 'submit-output-session',
             },
+          },
+        ],
+        runtimeAffinityBindings: [
+          {
+            id: 'affinity-poll-account',
+            scope: 'account',
+            sourceStepId: 'step-submit',
+            required: true,
           },
         ],
       },
@@ -299,9 +318,9 @@ export function catalogFixture(options: {
     bundleDefinitions: [
       {
         id: 'bundle-definition',
-        bundleKey: 'test-two-step-bundle',
-        displayName: 'Test bundle',
-        description: 'Test bundle',
+        bundleKey: 'video-maker-leonardo-image-to-video',
+        displayName: 'Leonardo Image-to-Video',
+        description: 'Two-step Leonardo image-to-video execution bundle.',
       },
     ],
     bundleVersions: [bundle],
