@@ -1,5 +1,6 @@
 export type ReleaseStatus = 'draft' | 'published';
 export type PackageValidationStatus = 'pending' | 'valid' | 'invalid';
+export type RuntimeAffinityScope = 'account';
 
 export interface SemanticVersion {
   major: number;
@@ -92,6 +93,13 @@ export interface StepInputBinding {
   source: StepInputBindingSource;
 }
 
+export interface StepRuntimeAffinityBinding {
+  id: string;
+  scope: RuntimeAffinityScope;
+  sourceStepId: string;
+  required: boolean;
+}
+
 export interface BundleStep {
   id: string;
   stepKey: string;
@@ -101,6 +109,7 @@ export interface BundleStep {
   tags: string[];
   policy: StepPolicy;
   inputBindings: StepInputBinding[];
+  runtimeAffinityBindings: StepRuntimeAffinityBinding[];
 }
 
 export interface FinalOutputBinding {

@@ -284,6 +284,17 @@ export class CatalogManagementService {
           id: randomUUID(),
           source: cloneBindingSource(binding.source, bundleInputIds, stepIds),
         })),
+        runtimeAffinityBindings: step.runtimeAffinityBindings.map((binding) => {
+          const sourceStepId = stepIds.get(binding.sourceStepId);
+          if (!sourceStepId) {
+            throw new Error(`cannot clone missing affinity source step ${binding.sourceStepId}`);
+          }
+          return {
+            ...binding,
+            id: randomUUID(),
+            sourceStepId,
+          };
+        }),
       })),
       finalOutputBindings: source.finalOutputBindings.map((binding) => {
         const bundleOutputUsageId = bundleOutputIds.get(binding.bundleOutputUsageId);
