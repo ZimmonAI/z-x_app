@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 
-test('reserves normalized migration without applying missing SQL', async () => {
+test('reserves normalized and runtime-affinity migrations without applying missing SQL', async () => {
   const manifest = JSON.parse(await fs.readFile('migrations/manifest.json', 'utf8')) as {
     migrations: Array<{
       id: string;
@@ -16,12 +16,20 @@ test('reserves normalized migration without applying missing SQL', async () => {
     '0001-execution-foundation',
     '0002-video-maker-phase-engine',
   ]);
-  expect(manifest.migrations.at(-1)).toMatchObject({
+  expect(manifest.migrations[2]).toMatchObject({
     id: '0003-normalized-script-bundle-foundation',
     enabled: false,
     revisionKey: 'normalized-script-bundle-foundation-v1',
     expectedTableCountAfterUp: 56,
     up: 'migrations/0003_normalized_script_bundle_foundation_up.sql',
     down: 'migrations/0003_normalized_script_bundle_foundation_down.sql',
+  });
+  expect(manifest.migrations[3]).toMatchObject({
+    id: '0004-step-runtime-affinity',
+    enabled: false,
+    revisionKey: 'step-runtime-affinity-v1',
+    expectedTableCountAfterUp: 58,
+    up: 'migrations/0004_step_runtime_affinity_up.sql',
+    down: 'migrations/0004_step_runtime_affinity_down.sql',
   });
 });
