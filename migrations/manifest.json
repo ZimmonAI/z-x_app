@@ -23,6 +23,15 @@
       "revisionKey": "normalized-script-bundle-foundation-v1",
       "expectedTableCountAfterUp": 56,
       "blockedBy": "authoritative reviewed live migration SQL and rollback SQL are not yet supplied"
+    },
+    {
+      "id": "0004-step-runtime-affinity",
+      "up": "migrations/0004_step_runtime_affinity_up.sql",
+      "down": "migrations/0004_step_runtime_affinity_down.sql",
+      "enabled": false,
+      "revisionKey": "step-runtime-affinity-v1",
+      "expectedTableCountAfterUp": 58,
+      "blockedBy": "0003 source synchronization plus approved reviewed SQL for the runtime-affinity extension"
     }
   ]
 }
