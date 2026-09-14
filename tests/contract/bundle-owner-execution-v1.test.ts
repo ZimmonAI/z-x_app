@@ -147,7 +147,7 @@ describe('zx.bundle-owner.v1 successor contract', () => {
     );
 
     expect(activation?.bundleVersion.id).toBe('bundle-v1');
-    expect(activation?.manifestInputs.prompt[0]).toEqual({
+    expect((activation?.manifestInputs.prompt ?? [])[0]).toEqual({
       kind: 'value',
       value: 'Make the subject walk forward.',
     });
