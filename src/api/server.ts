@@ -5,6 +5,11 @@ import { createLogger } from '../observability/logger.js';
 import { createPool, migrationCurrent } from '../persistence/pool.js';
 import { createAuthVerifier, type AuthVerifier } from './auth.js';
 import {
+  type BundleOwnerExecutionService,
+  UnavailableBundleOwnerExecutionService,
+} from './bundle-owner-execution-service.js';
+import { bundleExecutionRoutes } from './routes/bundle-executions.js';
+import {
   executionRoutes,
   MemoryExecutionService,
   PostgresExecutionService,
@@ -29,6 +34,7 @@ export async function buildServer(options: {
   config: Config;
   verify?: AuthVerifier;
   service?: ExecutionService;
+  bundleOwnerService?: BundleOwnerExecutionService;
   ready?: () => Promise<boolean>;
 }) {
   if (options.config.ZX_FEATURE_REAL_DEPENDENCIES_ENABLED) {
@@ -97,6 +103,7 @@ export async function buildServer(options: {
     throw new Error('ZX_DATABASE_URL required outside explicit test service injection');
   }
 
+  const bundleOwnerService = options.bundleOwnerService ?? new UnavailableBundleOwnerExecutionService();
   const verify = options.verify ?? createAuthVerifier(options.config);
   const ready =
     options.ready ??
@@ -119,5 +126,6 @@ export async function buildServer(options: {
   await healthRoutes(app);
   await readinessRoutes(app, { ready });
   await executionRoutes(app, { verify, service });
+  await bundleExecutionRoutes(app, { verify, service: bundleOwnerService });
   return app;
 }
