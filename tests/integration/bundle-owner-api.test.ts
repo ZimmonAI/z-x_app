@@ -21,13 +21,14 @@ const bundleScopes = new Set([
 ]);
 
 const verify: AuthVerifier = async (token) => ({
-  ownerApp: token === 'owner-b' ? 'owner-b' : 'owner-a',
+  ownerApp: token === 'owner-b' ? 'owner-b' : token === 'video-maker' ? 'video-maker' : 'owner-a',
   scopes: bundleScopes,
   payload: {},
 });
 
 const headersA = { authorization: 'Bearer owner-a' };
 const headersB = { authorization: 'Bearer owner-b' };
+const headersLegacy = { authorization: 'Bearer video-maker' };
 
 function publishedFixture() {
   return catalogFixture({
@@ -311,7 +312,7 @@ test('forbidden routing controls are rejected and legacy execution v1 remains ca
   const legacy = await app.inject({
     method: 'POST',
     url: '/internal/v1/executions',
-    headers: headersA,
+    headers: headersLegacy,
     payload: validRequest(),
   });
   expect(legacy.statusCode).toBe(202);
