@@ -2,14 +2,11 @@ import type pg from 'pg';
 import { vi } from 'vitest';
 import { migrationCurrent } from '../../src/persistence/pool.js';
 
-function poolReturning(
-  shape: Record<string, boolean>,
-  revision = true,
-): { pool: pg.Pool; query: ReturnType<typeof vi.fn> } {
-  const query = vi
-    .fn()
-    .mockResolvedValueOnce({ rows: [shape] })
-    .mockResolvedValueOnce({ rows: [{ ok: revision }] });
+function poolReturning(shape: Record<string, boolean>): {
+  pool: pg.Pool;
+  query: ReturnType<typeof vi.fn>;
+} {
+  const query = vi.fn().mockResolvedValue({ rows: [shape] });
   return { pool: { query } as unknown as pg.Pool, query };
 }
 
@@ -25,16 +22,15 @@ const liveV1Shape = {
   legacy_execution_attempts_absent: true,
 };
 
-test('readiness accepts the governed live z-x-v1 schema', async () => {
+test('readiness accepts the governed live z-x-v1 schema shape', async () => {
   const { pool, query } = poolReturning(liveV1Shape);
 
   await expect(migrationCurrent(pool)).resolves.toBe(true);
-  expect(query).toHaveBeenCalledTimes(2);
-  expect(query.mock.calls[1]?.[1]).toEqual(['z-x-v1']);
+  expect(query).toHaveBeenCalledTimes(1);
 });
 
-test('readiness rejects an obsolete phase-engine schema before revision lookup', async () => {
-  const { pool, query } = poolReturning({
+test('readiness rejects the obsolete phase-engine schema', async () => {
+  const { pool } = poolReturning({
     ...liveV1Shape,
     step_attempts: false,
     temporary_artifacts: false,
@@ -46,10 +42,13 @@ test('readiness rejects an obsolete phase-engine schema before revision lookup',
   });
 
   await expect(migrationCurrent(pool)).resolves.toBe(false);
-  expect(query).toHaveBeenCalledTimes(1);
 });
 
-test('readiness rejects the right shape without the governed z-x-v1 revision', async () => {
-  const { pool } = poolReturning(liveV1Shape, false);
+test('readiness rejects a partial generalized schema', async () => {
+  const { pool } = poolReturning({
+    ...liveV1Shape,
+    temporary_artifacts: false,
+  });
+
   await expect(migrationCurrent(pool)).resolves.toBe(false);
 });
