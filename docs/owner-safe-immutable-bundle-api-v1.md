@@ -1,43 +1,44 @@
 # Owner-Safe Immutable Bundle Execution API v1
 
-Status: contract and fixture activation path published; production generalized immutable-bundle runtime binding is not yet available. The default production binding returns `503 service unavailable` until the ordered-step runtime/persistence handoff is implemented and proven.
+Status: caller contract and fixture activation path are published on the **existing** execution API. Production generalized immutable-bundle persistence/ordered-step runtime binding is not yet available, so `zx.bundle-owner.v1` submit currently fails closed with `503 service unavailable` unless an explicit bundle runtime service is injected. Legacy execution contracts continue through the same routes.
 
-This API is generic. An owning application selects one exact immutable published bundle version and supplies only manifest-keyed inputs. The caller never selects provider, raw model, account, profile, runtime node, internal step, attempt count, retry interval, or placement.
+This API is generic. An owning application freezes its business action, selects one exact immutable published Z-X bundle version, and supplies only manifest-keyed inputs plus bounded owner-approved references/capabilities. The caller never selects provider account, profile, runtime node, worker, internal step, attempt number, provider-private route, or retry policy.
 
 ## Authentication and scopes
 
-All routes require `Authorization: Bearer <app-token>`. The existing JWT verifier supplies the authenticated `owner_app`; the browser/client must never receive or forward another application's bearer credentials.
+All routes require `Authorization: Bearer <app-token>`. The existing JWT verifier supplies the authenticated `owner_app`.
 
 - submit: `zx.executions.submit`
 - read execution: `zx.executions.read`
+- cancel execution: `zx.executions.cancel`
 - retrieve final temporary artifact: `zx.executions.read`
 
-Owner isolation is applied before execution/result visibility. A caller cannot discover another owner's execution or artifact; cross-owner reads return `404`.
-
-Cancellation is intentionally **not exposed** in this API version while the generalized immutable-bundle runtime is unavailable. It may be added only when cancellation can be honored truthfully against execution identity.
+Owner isolation is enforced at the service boundary. A caller cannot discover another owner's execution or artifact; cross-owner reads return `404`.
 
 ## Submit an immutable bundle execution
 
-`POST /internal/v1/bundle-executions`
+`POST /internal/v1/executions`
 
-Request contract: `zx.bundle-owner.v1` (`src/contracts/v1/bundle-owner.ts`).
+Successor request contract: `zx.bundle-owner.v1` (`src/contracts/v1/bundle-owner.ts`). The older `zx.execution.v1` contract remains supported on the same route.
 
 ```json
 {
   "contractVersion": "zx.bundle-owner.v1",
-  "ownerType": "app",
-  "ownerRef": "opaque-owner-business-action",
-  "bundleVersionId": "exact-published-bundle-version-id",
+  "ownerApp": "video-maker",
+  "ownerActionId": "scene-video-generation:42",
+  "ownerProjectId": "video-project:7",
   "idempotencyKey": "owner-scoped-idempotency-key",
   "requestFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "inputs": {
+  "bundleVersionId": "exact-published-bundle-version-id",
+  "manifestInputs": {
     "prompt": [
       { "kind": "value", "value": "example text" }
     ],
     "beginningFrame": [
       {
         "kind": "artifact",
-        "artifactRef": "opaque-owner-artifact-ref",
+        "artifactRef": "owner-artifact:begin",
+        "capabilityRef": "grant:begin",
         "mimeType": "image/png",
         "sizeBytes": 12345,
         "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -46,21 +47,22 @@ Request contract: `zx.bundle-owner.v1` (`src/contracts/v1/bundle-owner.ts`).
   },
   "correlation": {
     "sceneId": "scene-42"
-  }
+  },
+  "traceId": "trace-scene-42"
 }
 ```
 
-The request is strict. Unknown top-level controls are rejected, including provider/model/account/profile/runtime/step/attempt/retry controls.
+The request is strict. Unknown top-level controls are rejected. In particular, the caller cannot supply provider/model/account/profile/runtime/worker/step/attempt/retry/route-lock authority. `ownerApp` must match the authenticated owner identity.
 
-Before acceptance, Z-X must resolve the exact `bundleVersionId`, require it to be published, validate its catalog graph, require linked script versions and runtime packages to be executable, validate every supplied input key against declared bundle input usages, and enforce each manifest usage's cardinality and value kind. The activation boundary freezes the exact bundle, linked manifest/script versions, bindings, policies, and supplied inputs; it must never reinterpret the business request into another bundle.
+Before acceptance, Z-X resolves the exact `bundleVersionId`, requires it to be published and executable, validates every supplied `manifestInputs` key against the bundle's declared input usages, and enforces manifest type/cardinality. Activation freezes the exact bundle version, linked manifest versions, script versions, runtime packages, input/output bindings, step policies, final-output bindings, supplied manifest inputs, and ordered execution-local step instances. The outer step-control contract is exactly `DONE / POLLING / FAILED`.
 
 Response status:
 
 - `202 Accepted`: a new execution was accepted.
-- `200 OK`: the same authenticated owner replayed the same idempotency key with the same request fingerprint; the previously accepted execution identity is returned.
+- `200 OK`: the same authenticated owner replayed the same idempotency key with the same request fingerprint and receives the same execution identity.
 - `409 Conflict`: the same authenticated owner reused the idempotency key with a different fingerprint.
 
-Idempotency is scoped by authenticated owner application. The same key used by another owner is independent.
+Idempotency is scoped by authenticated owner application.
 
 Example accepted response:
 
@@ -68,7 +70,7 @@ Example accepted response:
 {
   "contractVersion": "zx.bundle-owner.v1",
   "executionId": "4e8b53fc-0f97-4a45-aec6-c19f41586d23",
-  "state": "accepted",
+  "status": "accepted",
   "outputs": [],
   "createdAt": "2026-09-14T08:00:00.000Z",
   "updatedAt": "2026-09-14T08:00:00.000Z"
@@ -77,24 +79,24 @@ Example accepted response:
 
 ## Read owner-scoped execution truth
 
-`GET /internal/v1/bundle-executions/:executionId`
+`GET /internal/v1/executions/:executionId`
 
-Normalized owner-visible states are:
+Normalized bundle-owner statuses are:
 
-- `accepted`: accepted and frozen for execution;
-- `queued`: eligible/waiting for generalized runtime work;
-- `running`: bundle work is executing;
-- `succeeded`: terminal success; final output items are stable;
-- `failed`: terminal failure; `failure` contains only safe normalized code/message;
-- `cancelled`: terminal cancellation, if future runtime cancellation support is added;
-- `timed-out`: terminal timeout.
+- `accepted`
+- `queued`
+- `running`
+- `succeeded`
+- `failed`
+- `cancelled`
+- `timed-out`
 
-The response exposes only:
+The `zx.bundle-owner.v1` response exposes only:
 
 ```text
 contractVersion
 executionId
-state
+status
 outputs[]
 failure? { code, message }
 createdAt
@@ -102,9 +104,9 @@ updatedAt
 terminalAt?
 ```
 
-It does not expose provider/account/profile/runtime binding, current internal step IDs, attempt rows, leases, runtime filesystem paths, credentials, cookies/tokens, or private provider URLs.
+It does not expose request fingerprints, idempotency keys, internal step/attempt tables, provider/account/profile/runtime identity, leases, runtime filesystem paths, credentials, cookies/tokens, or unrestricted provider URLs.
 
-A final output item is keyed by the bundle's declared output usage:
+A final scalar/object output is keyed by the bundle's declared output usage:
 
 ```json
 {
@@ -114,7 +116,7 @@ A final output item is keyed by the bundle's declared output usage:
 }
 ```
 
-A file-backed final output contains a bounded temporary artifact reference instead of an internal path or provider URL:
+A file-backed final output contains a bounded temporary-artifact reference:
 
 ```json
 {
@@ -126,49 +128,57 @@ A file-backed final output contains a bounded temporary artifact reference inste
     "sizeBytes": 1234567,
     "checksumSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "expiresAt": "2026-09-14T09:00:00.000Z",
-    "retrievalPath": "/internal/v1/bundle-executions/4e8b53fc-0f97-4a45-aec6-c19f41586d23/artifacts/opaque-artifact-id"
+    "retrievalPath": "/internal/v1/executions/4e8b53fc-0f97-4a45-aec6-c19f41586d23/artifacts/opaque-artifact-id"
   }
 }
 ```
 
-Repeated terminal reads return the same normalized execution/output identity and do not themselves create provider work.
+Repeated terminal reads return stable normalized owner truth and do not create new provider work.
+
+## Cancel
+
+`POST /internal/v1/executions/:executionId/cancel`
+
+The existing authenticated owner-scoped cancellation route is reused. Bundle executions return the same normalized `zx.bundle-owner.v1` execution shape. Retry and reconcile remain legacy/runtime-controlled compatibility surfaces; the immutable-bundle caller does not choose attempt number or routing controls.
 
 ## Retrieve a final temporary artifact
 
-`GET /internal/v1/bundle-executions/:executionId/artifacts/:artifactId`
+`GET /internal/v1/executions/:executionId/artifacts/:artifactId`
 
-The service must verify all of the following before returning bytes:
+Before returning bytes the service verifies:
 
 1. the authenticated owner can see the execution;
 2. the execution is terminal `succeeded`;
 3. the requested artifact is referenced by a final output visible on that execution;
 4. the artifact record belongs to the same owner and execution;
-5. the artifact has not expired.
+5. the artifact has not expired;
+6. declared and actual byte size match and remain inside the bounded artifact policy;
+7. MIME/checksum metadata conforms to the safe contract.
 
-Success streams the artifact bytes with safe metadata:
+Success streams bytes with safe metadata:
 
 - `Content-Type`
 - `Content-Length`
 - `X-ZX-Checksum-Sha256` when available
 - `X-ZX-Artifact-Expires-At`
 
-The response never exposes `runtime_node_ref`, local/runtime filesystem location, browser/profile path, credential/token/cookie material, or unrestricted provider download URLs. Z-X temporary artifacts are technical handback only; durable owner storage remains outside Z-X.
+Z-X temporary artifacts are handoff storage only. Durable business storage remains owned by the calling application.
 
 ## Error/status mapping
 
-- `400`: malformed contract, undeclared input key, manifest cardinality/type violation.
+- `400`: malformed contract, undeclared manifest key, manifest cardinality/type violation.
 - `401`: missing/invalid bearer authentication.
-- `403`: required scope missing.
-- `404`: exact published bundle not found, execution/artifact not visible to the authenticated owner, or artifact unrelated to visible final output. Cross-owner resources use `404` for non-disclosure.
-- `409`: owner-scoped idempotency conflict or catalog graph is not executable.
+- `403`: required scope missing or request `ownerApp` does not match the authenticated owner.
+- `404`: exact published bundle not found, or execution/artifact is not visible to the authenticated owner.
+- `409`: owner-scoped idempotency conflict, non-executable catalog graph, or bounded artifact integrity violation.
 - `410`: temporary artifact expired.
-- `429`: server request-rate limit exceeded where configured.
-- `503`: generalized immutable-bundle activation/runtime/persistence binding is not available in the running deployment.
+- `429`: execution/artifact rate limit exceeded.
+- `503`: generalized immutable-bundle production activation/runtime binding is unavailable.
 
-## Current implementation boundary
+## Compatibility and implementation boundary
 
-The source tree publishes the strict caller/response contract, authenticated routes, fixture activation service, exact-bundle/catalog/input validation, owner-scoped idempotency, normalized output/failure shape, redaction boundary, and bounded artifact authorization/retrieval behavior.
+`zx.bundle-owner.v1` is the canonical immutable-bundle successor contract, but it uses the existing `/internal/v1/executions` API and existing auth/scope/rate-limit boundary. `zx.execution.v1` and the older Video Maker compatibility contracts are not silently changed.
 
-The production server intentionally binds these routes to `UnavailableBundleOwnerExecutionService` until the generalized immutable-bundle persistence and ordered-step worker from the runtime handoff are implemented and tested. Therefore this contract publication alone does **not** claim live bundle execution readiness and does **not** unblock Video Maker Task 03.
+The source currently publishes the strict request/response contract, same-route dispatch adapter, owner-scoped idempotency, exact-bundle/catalog/manifest validation, execution-local activation freeze, normalized owner-safe outputs/failures, cancellation dispatch, and bounded temporary-artifact authorization/retrieval. Automated contract tests require no live provider call.
 
-Legacy `zx.execution.v1` routes remain unchanged and compatible while this narrow bundle-owner API is introduced separately.
+The production server still binds immutable-bundle execution to `UnavailableBundleOwnerExecutionService` until generalized durable activation/persistence and ordered-step runtime work is implemented. This contract is sufficient for an owner-side transport client to target the final field names and routes, but real provider Scene Video acceptance remains blocked on that runtime work.
