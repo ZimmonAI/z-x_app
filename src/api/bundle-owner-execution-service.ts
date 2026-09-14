@@ -17,10 +17,20 @@ export interface BundleArtifactPayload {
 }
 
 export interface BundleOwnerExecutionService {
-  submit(ownerApp: string, input: unknown): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 }>;
+  submit(
+    ownerApp: string,
+    input: unknown,
+  ): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 }>;
   get(ownerApp: string, executionId: string): Promise<BundleOwnerExecutionV1 | null>;
-  cancel(ownerApp: string, executionId: string): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 } | null>;
-  retrieveArtifact(ownerApp: string, executionId: string, artifactId: string): Promise<BundleArtifactPayload | null>;
+  cancel(
+    ownerApp: string,
+    executionId: string,
+  ): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 } | null>;
+  retrieveArtifact(
+    ownerApp: string,
+    executionId: string,
+    artifactId: string,
+  ): Promise<BundleArtifactPayload | null>;
 }
 
 interface InternalExecution {
@@ -61,11 +71,19 @@ function matchesManifestKind(valueKind: string, item: BundleInputItemV1): boolea
     );
   }
   if (item.kind !== 'value') return false;
-  if (['string', 'text', 'prompt', 'url', 'uri'].includes(normalized)) return typeof item.value === 'string';
-  if (['number', 'float', 'double', 'decimal'].includes(normalized)) return typeof item.value === 'number';
-  if (['integer', 'int'].includes(normalized)) return typeof item.value === 'number' && Number.isInteger(item.value);
+  if (['string', 'text', 'prompt', 'url', 'uri'].includes(normalized)) {
+    return typeof item.value === 'string';
+  }
+  if (['number', 'float', 'double', 'decimal'].includes(normalized)) {
+    return typeof item.value === 'number';
+  }
+  if (['integer', 'int'].includes(normalized)) {
+    return typeof item.value === 'number' && Number.isInteger(item.value);
+  }
   if (['boolean', 'bool'].includes(normalized)) return typeof item.value === 'boolean';
-  if (['json', 'object'].includes(normalized)) return item.value !== undefined && typeof item.value === 'object';
+  if (['json', 'object'].includes(normalized)) {
+    return item.value !== undefined && typeof item.value === 'object';
+  }
   return true;
 }
 
@@ -89,7 +107,9 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
   constructor(private readonly catalog: CatalogSnapshot) {}
 
   private activate(input: BundleOwnerSubmitV1): unknown {
-    const bundle = this.catalog.bundleVersions.find((candidate) => candidate.id === input.bundleVersionId);
+    const bundle = this.catalog.bundleVersions.find(
+      (candidate) => candidate.id === input.bundleVersionId,
+    );
     if (!bundle || bundle.releaseStatus !== 'published') {
       httpError(404, 'published bundle version not found');
     }
@@ -100,10 +120,14 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
 
     const declaredKeys = new Set(bundle.inputUsages.map((usage) => usage.usageKey));
     for (const suppliedKey of Object.keys(input.inputs)) {
-      if (!declaredKeys.has(suppliedKey)) httpError(400, `undeclared bundle input: ${suppliedKey}`);
+      if (!declaredKeys.has(suppliedKey)) {
+        httpError(400, `undeclared bundle input: ${suppliedKey}`);
+      }
     }
 
-    const manifestVersions = new Map(this.catalog.manifestVersions.map((version) => [version.id, version]));
+    const manifestVersions = new Map(
+      this.catalog.manifestVersions.map((version) => [version.id, version]),
+    );
     for (const usage of bundle.inputUsages) {
       const manifestVersion = manifestVersions.get(usage.manifestVersionId);
       if (!manifestVersion || manifestVersion.releaseStatus !== 'published') {
@@ -113,7 +137,9 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
       validateUsageItems(usage, manifestVersion.valueKind, items);
     }
 
-    const scriptVersions = new Map(this.catalog.scriptVersions.map((version) => [version.id, version]));
+    const scriptVersions = new Map(
+      this.catalog.scriptVersions.map((version) => [version.id, version]),
+    );
     const runtimePackages = new Map(
       this.catalog.runtimePackages.map((runtimePackage) => [runtimePackage.id, runtimePackage]),
     );
@@ -136,11 +162,16 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     });
   }
 
-  async submit(ownerApp: string, raw: unknown): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 }> {
+  async submit(
+    ownerApp: string,
+    raw: unknown,
+  ): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 }> {
     const input = BundleOwnerSubmitV1Schema.parse(raw);
     for (const row of this.rows.values()) {
       if (row.ownerApp === ownerApp && row.idempotencyKey === input.idempotencyKey) {
-        if (row.requestFingerprint !== input.requestFingerprint) httpError(409, 'idempotency conflict');
+        if (row.requestFingerprint !== input.requestFingerprint) {
+          httpError(409, 'idempotency conflict');
+        }
         return { code: 200, execution: cloneExecution(row.execution) };
       }
     }
@@ -172,7 +203,10 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     return row?.ownerApp === ownerApp ? cloneExecution(row.execution) : null;
   }
 
-  async cancel(ownerApp: string, executionId: string): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 } | null> {
+  async cancel(
+    ownerApp: string,
+    executionId: string,
+  ): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 } | null> {
     const row = this.rows.get(executionId);
     if (!row || row.ownerApp !== ownerApp) return null;
     if (['succeeded', 'failed', 'cancelled', 'timed-out'].includes(row.execution.state)) {
@@ -183,12 +217,22 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     return { code: 202, execution: cloneExecution(row.execution) };
   }
 
-  async retrieveArtifact(ownerApp: string, executionId: string, artifactId: string): Promise<BundleArtifactPayload | null> {
+  async retrieveArtifact(
+    ownerApp: string,
+    executionId: string,
+    artifactId: string,
+  ): Promise<BundleArtifactPayload | null> {
     const row = this.rows.get(executionId);
     if (!row || row.ownerApp !== ownerApp || row.execution.state !== 'succeeded') return null;
+    const visibleOutput = row.execution.outputs.some(
+      (output) => output.artifact?.artifactId === artifactId,
+    );
+    if (!visibleOutput) return null;
     const artifact = this.artifacts.get(artifactId);
     if (!artifact || artifact.ownerApp !== ownerApp || artifact.executionId !== executionId) return null;
-    if (Date.parse(artifact.metadata.expiresAt) <= Date.now()) httpError(410, 'artifact expired');
+    if (Date.parse(artifact.metadata.expiresAt) <= Date.now()) {
+      httpError(410, 'artifact expired');
+    }
     return { metadata: structuredClone(artifact.metadata), bytes: artifact.bytes.slice() };
   }
 
@@ -225,8 +269,19 @@ function unavailable(): Promise<never> {
 }
 
 export class UnavailableBundleOwnerExecutionService implements BundleOwnerExecutionService {
-  submit(): Promise<never> { return unavailable(); }
-  get(): Promise<never> { return unavailable(); }
-  cancel(): Promise<never> { return unavailable(); }
-  retrieveArtifact(): Promise<never> { return unavailable(); }
+  submit(): Promise<never> {
+    return unavailable();
+  }
+
+  get(): Promise<never> {
+    return unavailable();
+  }
+
+  cancel(): Promise<never> {
+    return unavailable();
+  }
+
+  retrieveArtifact(): Promise<never> {
+    return unavailable();
+  }
 }
