@@ -70,6 +70,12 @@ const opaqueReference = safeString
 const safeMimeType = safeString.regex(/^[a-z][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/);
 const checksumSha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const safeJsonValue = z.unknown().refine((value) => isSafeJsonValue(value), 'unsafe JSON value');
+const safeFileNameHint = safeString
+  .max(255)
+  .refine(
+    (value) => !value.includes('/') && !value.includes('\\') && value !== '.' && value !== '..',
+    'file name hint must not contain a path',
+  );
 
 export const BundleInputItemV1Schema = z.discriminatedUnion('kind', [
   z
@@ -118,7 +124,7 @@ export const TemporaryArtifactDescriptorV1Schema = z
     mimeType: safeMimeType,
     sizeBytes: z.number().int().nonnegative().safe(),
     checksumSha256: checksumSha256.optional(),
-    fileNameHint: safeString.max(255).optional(),
+    fileNameHint: safeFileNameHint.optional(),
     expiresAt: z.iso.datetime(),
   })
   .strict();
