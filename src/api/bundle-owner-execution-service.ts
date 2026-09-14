@@ -1,14 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import type { CatalogSnapshot, ManifestUsage } from '../catalog/v1/types.js';
+import type {
+  BundleVersion,
+  CatalogSnapshot,
+  ManifestUsage,
+  ManifestVersion,
+  RuntimePackage,
+  ScriptVersion,
+} from '../catalog/v1/types.js';
 import { validateBundleVersion } from '../catalog/v1/validation.js';
 import {
   ArtifactMetadataV1Schema,
+  BundleOwnerExecutionV1Schema,
   BundleOwnerSubmitV1Schema,
+  MAX_TEMP_ARTIFACT_BYTES,
   type ArtifactMetadataV1,
-  type BundleInputItemV1,
+  type BundleManifestInputItemV1,
   type BundleOwnerExecutionV1,
   type BundleOwnerSubmitV1,
-  type OwnerExecutionState,
+  type OwnerExecutionStatus,
 } from '../contracts/v1/bundle-owner.js';
 
 export interface BundleArtifactPayload {
@@ -33,14 +42,38 @@ export interface BundleOwnerExecutionService {
   ): Promise<BundleArtifactPayload | null>;
 }
 
+interface FrozenStepInstance {
+  executionStepId: string;
+  bundleStepId: string;
+  stepKey: string;
+  stepOrder: number;
+  scriptVersionId: string;
+  policy: BundleVersion['steps'][number]['policy'];
+  inputBindings: BundleVersion['steps'][number]['inputBindings'];
+  runtimeAffinityBindings: BundleVersion['steps'][number]['runtimeAffinityBindings'];
+  status: 'pending';
+}
+
+export interface FrozenBundleActivation {
+  bundleVersion: BundleVersion;
+  manifestVersions: ManifestVersion[];
+  scriptVersions: ScriptVersion[];
+  runtimePackages: RuntimePackage[];
+  manifestInputs: BundleOwnerSubmitV1['manifestInputs'];
+  stepInstances: FrozenStepInstance[];
+  finalOutputBindings: BundleVersion['finalOutputBindings'];
+  controlContract: readonly ['DONE', 'POLLING', 'FAILED'];
+}
+
 interface InternalExecution {
   ownerApp: string;
-  ownerRef: string;
+  ownerActionId: string;
+  ownerProjectId?: string;
   idempotencyKey: string;
   requestFingerprint: string;
   request: BundleOwnerSubmitV1;
   execution: BundleOwnerExecutionV1;
-  frozenActivation: unknown;
+  frozenActivation: FrozenBundleActivation;
 }
 
 interface InternalArtifact extends BundleArtifactPayload {
@@ -56,7 +89,7 @@ function cloneExecution(execution: BundleOwnerExecutionV1): BundleOwnerExecution
   return structuredClone(execution);
 }
 
-function matchesManifestKind(valueKind: string, item: BundleInputItemV1): boolean {
+function matchesManifestKind(valueKind: string, item: BundleManifestInputItemV1): boolean {
   const normalized = valueKind.toLowerCase();
   const resourceKind = normalized.endsWith('-resource')
     ? normalized.slice(0, -'-resource'.length)
@@ -90,7 +123,7 @@ function matchesManifestKind(valueKind: string, item: BundleInputItemV1): boolea
 function validateUsageItems(
   usage: ManifestUsage,
   valueKind: string,
-  items: BundleInputItemV1[],
+  items: BundleManifestInputItemV1[],
 ): void {
   if (items.length < usage.minItems || items.length > usage.maxItems) {
     httpError(400, `input ${usage.usageKey} violates cardinality ${usage.minItems}..${usage.maxItems}`);
@@ -106,7 +139,7 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
 
   constructor(private readonly catalog: CatalogSnapshot) {}
 
-  private activate(input: BundleOwnerSubmitV1): unknown {
+  private activate(input: BundleOwnerSubmitV1): FrozenBundleActivation {
     const bundle = this.catalog.bundleVersions.find(
       (candidate) => candidate.id === input.bundleVersionId,
     );
@@ -119,7 +152,7 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     }
 
     const declaredKeys = new Set(bundle.inputUsages.map((usage) => usage.usageKey));
-    for (const suppliedKey of Object.keys(input.inputs)) {
+    for (const suppliedKey of Object.keys(input.manifestInputs)) {
       if (!declaredKeys.has(suppliedKey)) {
         httpError(400, `undeclared bundle input: ${suppliedKey}`);
       }
@@ -133,7 +166,7 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
       if (!manifestVersion || manifestVersion.releaseStatus !== 'published') {
         httpError(409, `bundle input ${usage.usageKey} references unpublished manifest version`);
       }
-      const items = input.inputs[usage.usageKey] ?? [];
+      const items = input.manifestInputs[usage.usageKey] ?? [];
       validateUsageItems(usage, manifestVersion.valueKind, items);
     }
 
@@ -143,6 +176,13 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     const runtimePackages = new Map(
       this.catalog.runtimePackages.map((runtimePackage) => [runtimePackage.id, runtimePackage]),
     );
+    const frozenScripts: ScriptVersion[] = [];
+    const frozenPackages: RuntimePackage[] = [];
+    const manifestVersionIds = new Set<string>([
+      ...bundle.inputUsages.map((usage) => usage.manifestVersionId),
+      ...bundle.outputUsages.map((usage) => usage.manifestVersionId),
+    ]);
+
     for (const step of bundle.steps) {
       const script = scriptVersions.get(step.scriptVersionId);
       if (!script || script.releaseStatus !== 'published') {
@@ -152,13 +192,44 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
       if (!runtimePackage || runtimePackage.validationStatus !== 'valid' || !runtimePackage.executable) {
         httpError(409, 'bundle references non-executable runtime package');
       }
+      frozenScripts.push(script);
+      frozenPackages.push(runtimePackage);
+      for (const usage of [...script.inputUsages, ...script.outputUsages]) {
+        manifestVersionIds.add(usage.manifestVersionId);
+      }
     }
+
+    const frozenManifests = [...manifestVersionIds].map((id) => {
+      const manifest = manifestVersions.get(id);
+      if (!manifest || manifest.releaseStatus !== 'published') {
+        httpError(409, 'bundle activation references unpublished manifest version');
+      }
+      return manifest;
+    });
+
+    const stepInstances: FrozenStepInstance[] = [...bundle.steps]
+      .sort((left, right) => left.stepOrder - right.stepOrder)
+      .map((step) => ({
+        executionStepId: randomUUID(),
+        bundleStepId: step.id,
+        stepKey: step.stepKey,
+        stepOrder: step.stepOrder,
+        scriptVersionId: step.scriptVersionId,
+        policy: structuredClone(step.policy),
+        inputBindings: structuredClone(step.inputBindings),
+        runtimeAffinityBindings: structuredClone(step.runtimeAffinityBindings),
+        status: 'pending',
+      }));
 
     return structuredClone({
       bundleVersion: bundle,
-      manifests: bundle.inputUsages.map((usage) => manifestVersions.get(usage.manifestVersionId)),
-      scripts: bundle.steps.map((step) => scriptVersions.get(step.scriptVersionId)),
-      inputs: input.inputs,
+      manifestVersions: frozenManifests,
+      scriptVersions: frozenScripts,
+      runtimePackages: frozenPackages,
+      manifestInputs: input.manifestInputs,
+      stepInstances,
+      finalOutputBindings: bundle.finalOutputBindings,
+      controlContract: ['DONE', 'POLLING', 'FAILED'] as const,
     });
   }
 
@@ -167,6 +238,9 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     raw: unknown,
   ): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 }> {
     const input = BundleOwnerSubmitV1Schema.parse(raw);
+    if (input.ownerApp !== ownerApp) {
+      httpError(403, 'owner mismatch');
+    }
     for (const row of this.rows.values()) {
       if (row.ownerApp === ownerApp && row.idempotencyKey === input.idempotencyKey) {
         if (row.requestFingerprint !== input.requestFingerprint) {
@@ -181,14 +255,15 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     const execution: BundleOwnerExecutionV1 = {
       contractVersion: 'zx.bundle-owner.v1',
       executionId: randomUUID(),
-      state: 'accepted',
+      status: 'accepted',
       outputs: [],
       createdAt: now,
       updatedAt: now,
     };
     this.rows.set(execution.executionId, {
       ownerApp,
-      ownerRef: input.ownerRef,
+      ownerActionId: input.ownerActionId,
+      ...(input.ownerProjectId ? { ownerProjectId: input.ownerProjectId } : {}),
       idempotencyKey: input.idempotencyKey,
       requestFingerprint: input.requestFingerprint,
       request: structuredClone(input),
@@ -209,11 +284,11 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
   ): Promise<{ code: 200 | 202; execution: BundleOwnerExecutionV1 } | null> {
     const row = this.rows.get(executionId);
     if (!row || row.ownerApp !== ownerApp) return null;
-    if (['succeeded', 'failed', 'cancelled', 'timed-out'].includes(row.execution.state)) {
+    if (['succeeded', 'failed', 'cancelled', 'timed-out'].includes(row.execution.status)) {
       return { code: 200, execution: cloneExecution(row.execution) };
     }
     const now = new Date().toISOString();
-    row.execution = { ...row.execution, state: 'cancelled', updatedAt: now, terminalAt: now };
+    row.execution = { ...row.execution, status: 'cancelled', updatedAt: now, terminalAt: now };
     return { code: 202, execution: cloneExecution(row.execution) };
   }
 
@@ -223,7 +298,7 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     artifactId: string,
   ): Promise<BundleArtifactPayload | null> {
     const row = this.rows.get(executionId);
-    if (!row || row.ownerApp !== ownerApp || row.execution.state !== 'succeeded') return null;
+    if (!row || row.ownerApp !== ownerApp || row.execution.status !== 'succeeded') return null;
     const visibleOutput = row.execution.outputs.some(
       (output) => output.artifact?.artifactId === artifactId,
     );
@@ -233,32 +308,53 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     if (Date.parse(artifact.metadata.expiresAt) <= Date.now()) {
       httpError(410, 'artifact expired');
     }
+    if (
+      artifact.metadata.sizeBytes > MAX_TEMP_ARTIFACT_BYTES ||
+      artifact.bytes.byteLength !== artifact.metadata.sizeBytes
+    ) {
+      httpError(409, 'artifact size policy violation');
+    }
     return { metadata: structuredClone(artifact.metadata), bytes: artifact.bytes.slice() };
   }
 
   seedTerminalResultForTest(input: {
     ownerApp: string;
     executionId: string;
-    state: Extract<OwnerExecutionState, 'succeeded' | 'failed'>;
+    status: Extract<OwnerExecutionStatus, 'succeeded' | 'failed'>;
     outputs?: BundleOwnerExecutionV1['outputs'];
     failure?: BundleOwnerExecutionV1['failure'];
   }): void {
     const row = this.rows.get(input.executionId);
     if (!row || row.ownerApp !== input.ownerApp) throw new Error('execution not found');
     const now = new Date().toISOString();
-    row.execution = {
+    row.execution = BundleOwnerExecutionV1Schema.parse({
       ...row.execution,
-      state: input.state,
+      status: input.status,
       outputs: structuredClone(input.outputs ?? []),
       ...(input.failure ? { failure: structuredClone(input.failure) } : {}),
       updatedAt: now,
       terminalAt: now,
-    };
+    });
   }
 
   seedArtifactForTest(input: InternalArtifact): void {
-    ArtifactMetadataV1Schema.parse(input.metadata);
-    this.artifacts.set(input.metadata.artifactId, { ...input, bytes: input.bytes.slice() });
+    const metadata = ArtifactMetadataV1Schema.parse(input.metadata);
+    if (input.bytes.byteLength !== metadata.sizeBytes) {
+      throw new Error('artifact bytes do not match declared size');
+    }
+    this.artifacts.set(metadata.artifactId, {
+      ...input,
+      metadata,
+      bytes: input.bytes.slice(),
+    });
+  }
+
+  inspectFrozenActivationForTest(
+    ownerApp: string,
+    executionId: string,
+  ): FrozenBundleActivation | null {
+    const row = this.rows.get(executionId);
+    return row?.ownerApp === ownerApp ? structuredClone(row.frozenActivation) : null;
   }
 }
 
@@ -273,15 +369,15 @@ export class UnavailableBundleOwnerExecutionService implements BundleOwnerExecut
     return unavailable();
   }
 
-  get(): Promise<never> {
-    return unavailable();
+  async get(): Promise<null> {
+    return null;
   }
 
-  cancel(): Promise<never> {
-    return unavailable();
+  async cancel(): Promise<null> {
+    return null;
   }
 
-  retrieveArtifact(): Promise<never> {
-    return unavailable();
+  async retrieveArtifact(): Promise<null> {
+    return null;
   }
 }
