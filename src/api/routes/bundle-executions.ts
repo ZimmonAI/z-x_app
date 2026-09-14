@@ -30,18 +30,12 @@ export async function bundleExecutionRoutes(
     return execution ?? reply.code(404).send({ error: 'not found' });
   });
 
-  app.post('/internal/v1/bundle-executions/:executionId/cancel', async (request, reply) => {
-    const actor = await principal(request, options.verify, 'zx.executions.cancel');
-    const { executionId } = request.params as { executionId: string };
-    const result = await options.service.cancel(actor.ownerApp, executionId);
-    return result
-      ? reply.code(result.code).send(result.execution)
-      : reply.code(404).send({ error: 'not found' });
-  });
-
   app.get('/internal/v1/bundle-executions/:executionId/artifacts/:artifactId', async (request, reply) => {
     const actor = await principal(request, options.verify, 'zx.executions.read');
-    const { executionId, artifactId } = request.params as { executionId: string; artifactId: string };
+    const { executionId, artifactId } = request.params as {
+      executionId: string;
+      artifactId: string;
+    };
     const artifact = await options.service.retrieveArtifact(actor.ownerApp, executionId, artifactId);
     if (!artifact) return reply.code(404).send({ error: 'not found' });
     reply.header('content-type', artifact.metadata.mimeType);
