@@ -45,6 +45,6 @@ export async function bundleArtifactRoutes(
       reply.header('x-zx-checksum-sha256', artifact.metadata.checksumSha256);
     }
     reply.header('x-zx-artifact-expires-at', artifact.metadata.expiresAt);
-    return reply.send(Readable.from(artifact.bytes));
+    return reply.send(Readable.from([Buffer.from(artifact.bytes)]));
   });
 }
