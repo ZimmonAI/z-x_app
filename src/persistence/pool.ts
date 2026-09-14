@@ -6,8 +6,6 @@ const MIGRATIONS = [
   'migrations/0002_video_maker_phase_engine',
 ] as const;
 
-const LIVE_SCHEMA_REVISION = 'z-x-v1';
-
 export function createPool(connectionString: string): pg.Pool {
   return new pg.Pool({
     connectionString,
@@ -27,7 +25,7 @@ export async function applyMigration(
 }
 
 export async function migrationCurrent(pool: pg.Pool): Promise<boolean> {
-  const shape = await pool.query<{
+  const result = await pool.query<{
     schema_revisions: boolean;
     executions: boolean;
     step_attempts: boolean;
@@ -70,28 +68,16 @@ export async function migrationCurrent(pool: pg.Pool): Promise<boolean> {
          as legacy_execution_attempts_absent`,
   );
 
-  const current = shape.rows[0];
-  if (
-    !current?.schema_revisions ||
-    !current.executions ||
-    !current.step_attempts ||
-    !current.temporary_artifacts ||
-    !current.owner_type ||
-    !current.owner_ref ||
-    !current.current_step_instance_id ||
-    !current.legacy_phase_attempts_absent ||
-    !current.legacy_execution_attempts_absent
-  ) {
-    return false;
-  }
-
-  const revision = await pool.query<{ ok: boolean }>(
-    `select exists (
-       select 1
-         from execution.schema_revisions
-        where revision_key=$1
-     ) as ok`,
-    [LIVE_SCHEMA_REVISION],
+  const current = result.rows[0];
+  return Boolean(
+    current?.schema_revisions &&
+      current.executions &&
+      current.step_attempts &&
+      current.temporary_artifacts &&
+      current.owner_type &&
+      current.owner_ref &&
+      current.current_step_instance_id &&
+      current.legacy_phase_attempts_absent &&
+      current.legacy_execution_attempts_absent,
   );
-  return revision.rows[0]?.ok === true;
 }
