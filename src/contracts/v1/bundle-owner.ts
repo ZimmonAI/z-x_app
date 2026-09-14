@@ -11,13 +11,20 @@ export const BundleInputItemV1Schema = z.discriminatedUnion('kind', [
   z
     .object({
       kind: z.literal('value'),
-      value: z.union([z.string().max(65536), z.number().finite(), z.boolean(), z.null(), z.record(z.string(), z.unknown()), z.array(z.unknown())]),
+      value: z.union([
+        z.string().max(65536),
+        z.number().finite(),
+        z.boolean(),
+        z.null(),
+        z.record(z.string(), z.unknown()),
+        z.array(z.unknown()),
+      ]),
     })
     .strict(),
   z
     .object({
       kind: z.literal('artifact'),
-      artifactRef: safeKey.max(512),
+      artifactRef: safeKey,
       mimeType: safeMimeType.optional(),
       sizeBytes: z.number().int().nonnegative().safe().optional(),
       checksumSha256: checksumSha256.optional(),
@@ -30,7 +37,7 @@ export const BundleOwnerSubmitV1Schema = z
     contractVersion: z.literal(BUNDLE_OWNER_CONTRACT_VERSION),
     ownerType: z.literal('app'),
     ownerRef: safeString.max(512),
-    bundleVersionId: safeKey.max(512),
+    bundleVersionId: safeKey,
     idempotencyKey: safeString.max(512),
     requestFingerprint: checksumSha256,
     inputs: z.record(safeKey, z.array(BundleInputItemV1Schema).max(64)).default({}),
@@ -54,12 +61,16 @@ export type OwnerExecutionState = (typeof OWNER_EXECUTION_STATES)[number];
 
 export const TemporaryArtifactReferenceV1Schema = z
   .object({
-    artifactId: safeKey.max(512),
+    artifactId: safeKey,
     mimeType: safeMimeType,
     sizeBytes: z.number().int().nonnegative().safe(),
     checksumSha256: checksumSha256.optional(),
     expiresAt: z.string().datetime(),
-    retrievalPath: z.string().regex(/^\/v1\/bundle-executions\/[A-Za-z0-9._:-]+\/artifacts\/[A-Za-z0-9._:-]+$/),
+    retrievalPath: z
+      .string()
+      .regex(
+        /^\/internal\/v1\/bundle-executions\/[A-Za-z0-9._:-]+\/artifacts\/[A-Za-z0-9._:-]+$/,
+      ),
   })
   .strict();
 
@@ -85,7 +96,7 @@ export const OwnerTerminalFailureV1Schema = z
 export const BundleOwnerExecutionV1Schema = z
   .object({
     contractVersion: z.literal(BUNDLE_OWNER_CONTRACT_VERSION),
-    executionId: safeKey.max(512),
+    executionId: safeKey,
     state: z.enum(OWNER_EXECUTION_STATES),
     outputs: z.array(BundleOutputItemV1Schema),
     failure: OwnerTerminalFailureV1Schema.optional(),
@@ -99,7 +110,7 @@ export type BundleOwnerExecutionV1 = z.infer<typeof BundleOwnerExecutionV1Schema
 
 export const ArtifactMetadataV1Schema = z
   .object({
-    artifactId: safeKey.max(512),
+    artifactId: safeKey,
     mimeType: safeMimeType,
     sizeBytes: z.number().int().nonnegative().safe(),
     checksumSha256: checksumSha256.optional(),
