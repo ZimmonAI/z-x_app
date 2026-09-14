@@ -206,6 +206,7 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
       if (items.length < resolved.usage.minItems || items.length > resolved.usage.maxItems) {
         fixtureError(`invalid fixture output cardinality for ${resolved.manifestKey}`);
       }
+      if (items.length === 0 && !resolved.usage.required) continue;
       if (items.some((item) => !outputKindMatches(item, resolved.valueKind))) {
         fixtureError(`invalid fixture output type for ${resolved.manifestKey}`);
       }
