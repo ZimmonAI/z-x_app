@@ -4,6 +4,12 @@ import type { Config } from '../config.js';
 import { createLogger } from '../observability/logger.js';
 import { createPool, migrationCurrent } from '../persistence/pool.js';
 import { createAuthVerifier, type AuthVerifier } from './auth.js';
+import { BundleAwareExecutionService } from './bundle-aware-execution-service.js';
+import {
+  type BundleOwnerExecutionService,
+  UnavailableBundleOwnerExecutionService,
+} from './bundle-owner-execution-service.js';
+import { bundleArtifactRoutes } from './routes/bundle-artifacts.js';
 import {
   executionRoutes,
   MemoryExecutionService,
@@ -29,6 +35,7 @@ export async function buildServer(options: {
   config: Config;
   verify?: AuthVerifier;
   service?: ExecutionService;
+  bundleOwnerService?: BundleOwnerExecutionService;
   ready?: () => Promise<boolean>;
 }) {
   if (options.config.ZX_FEATURE_REAL_DEPENDENCIES_ENABLED) {
@@ -83,7 +90,7 @@ export async function buildServer(options: {
   const pool = options.service || !options.config.ZX_DATABASE_URL
     ? undefined
     : createPool(options.config.ZX_DATABASE_URL);
-  const service =
+  const legacyService =
     options.service ??
     (pool
       ? new CompositeExecutionService(
@@ -93,10 +100,12 @@ export async function buildServer(options: {
       : options.config.ZX_NODE_ENV === 'test'
         ? new MemoryExecutionService()
         : undefined);
-  if (!service) {
+  if (!legacyService) {
     throw new Error('ZX_DATABASE_URL required outside explicit test service injection');
   }
 
+  const bundleOwnerService = options.bundleOwnerService ?? new UnavailableBundleOwnerExecutionService();
+  const service = new BundleAwareExecutionService(legacyService, bundleOwnerService);
   const verify = options.verify ?? createAuthVerifier(options.config);
   const ready =
     options.ready ??
@@ -119,5 +128,6 @@ export async function buildServer(options: {
   await healthRoutes(app);
   await readinessRoutes(app, { ready });
   await executionRoutes(app, { verify, service });
+  await bundleArtifactRoutes(app, { verify, service: bundleOwnerService });
   return app;
 }
