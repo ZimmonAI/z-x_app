@@ -1,9 +1,14 @@
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
 import type { Config } from '../config.js';
+import {
+  UnavailableBundleOwnerExecutionService,
+  type BundleOwnerExecutionService,
+} from '../bundle-execution/v1/service.js';
 import { createLogger } from '../observability/logger.js';
 import { createPool, migrationCurrent } from '../persistence/pool.js';
 import { createAuthVerifier, type AuthVerifier } from './auth.js';
+import { bundleOwnerExecutionRoutes } from './routes/bundle-owner-executions.js';
 import {
   executionRoutes,
   MemoryExecutionService,
@@ -29,6 +34,7 @@ export async function buildServer(options: {
   config: Config;
   verify?: AuthVerifier;
   service?: ExecutionService;
+  bundleService?: BundleOwnerExecutionService;
   ready?: () => Promise<boolean>;
 }) {
   if (options.config.ZX_FEATURE_REAL_DEPENDENCIES_ENABLED) {
@@ -96,6 +102,7 @@ export async function buildServer(options: {
   if (!service) {
     throw new Error('ZX_DATABASE_URL required outside explicit test service injection');
   }
+  const bundleService = options.bundleService ?? new UnavailableBundleOwnerExecutionService();
 
   const verify = options.verify ?? createAuthVerifier(options.config);
   const ready =
@@ -119,5 +126,6 @@ export async function buildServer(options: {
   await healthRoutes(app);
   await readinessRoutes(app, { ready });
   await executionRoutes(app, { verify, service });
+  await bundleOwnerExecutionRoutes(app, { verify, service: bundleService });
   return app;
 }
