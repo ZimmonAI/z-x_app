@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
-import { bundleExecutionRoutes } from '../../src/api/routes/bundle-executions.js';
 import { MemoryBundleOwnerExecutionService } from '../../src/api/bundle-owner-execution-service.js';
+import { bundleExecutionRoutes } from '../../src/api/routes/bundle-executions.js';
 import { BundleOwnerSubmitV1Schema } from '../../src/contracts/v1/bundle-owner.js';
 import { catalogFixture } from '../unit/catalog-fixture.js';
 
@@ -15,8 +15,12 @@ function request(overrides: Record<string, unknown> = {}) {
     requestFingerprint: 'a'.repeat(64),
     inputs: {
       prompt: [{ kind: 'value', value: 'Make the subject walk forward.' }],
-      beginningFrame: [{ kind: 'artifact', artifactRef: 'owner-artifact:begin', mimeType: 'image/png' }],
-      endingFrame: [{ kind: 'artifact', artifactRef: 'owner-artifact:end', mimeType: 'image/png' }],
+      beginningFrame: [
+        { kind: 'artifact', artifactRef: 'owner-artifact:begin', mimeType: 'image/png' },
+      ],
+      endingFrame: [
+        { kind: 'artifact', artifactRef: 'owner-artifact:end', mimeType: 'image/png' },
+      ],
     },
     correlation: { sceneId: 'scene-42' },
     ...overrides,
@@ -65,8 +69,12 @@ describe('zx.bundle-owner.v1', () => {
     });
     const draftService = new MemoryBundleOwnerExecutionService(unpublished.snapshot);
 
-    await expect(draftService.submit('owner-a', request())).rejects.toMatchObject({ statusCode: 404 });
-    await expect(service().submit('owner-a', request({ bundleVersionId: 'missing' }))).rejects.toMatchObject({ statusCode: 404 });
+    await expect(draftService.submit('owner-a', request())).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    await expect(
+      service().submit('owner-a', request({ bundleVersionId: 'missing' })),
+    ).rejects.toMatchObject({ statusCode: 404 });
     await expect(
       service().submit(
         'owner-a',
@@ -125,7 +133,9 @@ describe('zx.bundle-owner.v1', () => {
       state: 'succeeded',
       outputs: [{ usageKey: 'generationReport', ordinal: 0 }],
     });
-    expect(JSON.stringify(firstRead)).not.toMatch(/provider|account|profile|runtime_node|runtimeNode|attempt/i);
+    expect(JSON.stringify(firstRead)).not.toMatch(
+      /provider|account|profile|runtime_node|runtimeNode|attempt/i,
+    );
   });
 
   it('returns normalized terminal failure without leaking internals', async () => {
@@ -144,23 +154,43 @@ describe('zx.bundle-owner.v1', () => {
     });
   });
 
-  it('authorizes bounded temporary artifacts by owner+execution and enforces expiry', async () => {
+  it('authorizes bounded temporary artifacts by visible owner output and enforces expiry', async () => {
     const target = service();
     const accepted = await target.submit('owner-a', request());
     const executionId = accepted.execution.executionId;
     const artifactId = 'artifact-1';
+    const expiredArtifactId = 'expired';
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    const retrievalPath = `/v1/bundle-executions/${executionId}/artifacts/${artifactId}`;
+    const expiredAt = new Date(Date.now() - 1_000).toISOString();
 
     target.seedTerminalResultForTest({
       ownerApp: 'owner-a',
       executionId,
       state: 'succeeded',
-      outputs: [{
-        usageKey: 'generatedVideo',
-        ordinal: 0,
-        artifact: { artifactId, mimeType: 'video/mp4', sizeBytes: 3, expiresAt, retrievalPath },
-      }],
+      outputs: [
+        {
+          usageKey: 'generatedVideo',
+          ordinal: 0,
+          artifact: {
+            artifactId,
+            mimeType: 'video/mp4',
+            sizeBytes: 3,
+            expiresAt,
+            retrievalPath: `/internal/v1/bundle-executions/${executionId}/artifacts/${artifactId}`,
+          },
+        },
+        {
+          usageKey: 'generatedVideo',
+          ordinal: 1,
+          artifact: {
+            artifactId: expiredArtifactId,
+            mimeType: 'video/mp4',
+            sizeBytes: 1,
+            expiresAt: expiredAt,
+            retrievalPath: `/internal/v1/bundle-executions/${executionId}/artifacts/${expiredArtifactId}`,
+          },
+        },
+      ],
     });
     target.seedArtifactForTest({
       ownerApp: 'owner-a',
@@ -168,24 +198,26 @@ describe('zx.bundle-owner.v1', () => {
       metadata: { artifactId, mimeType: 'video/mp4', sizeBytes: 3, expiresAt },
       bytes: new Uint8Array([1, 2, 3]),
     });
-
-    expect(await target.retrieveArtifact('owner-b', executionId, artifactId)).toBeNull();
-    expect(await target.retrieveArtifact('owner-a', executionId, artifactId)).toMatchObject({
-      metadata: { artifactId, mimeType: 'video/mp4', sizeBytes: 3 },
-    });
-
     target.seedArtifactForTest({
       ownerApp: 'owner-a',
       executionId,
       metadata: {
-        artifactId: 'expired',
+        artifactId: expiredArtifactId,
         mimeType: 'video/mp4',
         sizeBytes: 1,
-        expiresAt: new Date(Date.now() - 1_000).toISOString(),
+        expiresAt: expiredAt,
       },
       bytes: new Uint8Array([1]),
     });
-    await expect(target.retrieveArtifact('owner-a', executionId, 'expired')).rejects.toMatchObject({ statusCode: 410 });
+
+    expect(await target.retrieveArtifact('owner-b', executionId, artifactId)).toBeNull();
+    expect(await target.retrieveArtifact('owner-a', executionId, 'unrelated')).toBeNull();
+    expect(await target.retrieveArtifact('owner-a', executionId, artifactId)).toMatchObject({
+      metadata: { artifactId, mimeType: 'video/mp4', sizeBytes: 3 },
+    });
+    await expect(
+      target.retrieveArtifact('owner-a', executionId, expiredArtifactId),
+    ).rejects.toMatchObject({ statusCode: 410 });
   });
 
   it('enforces auth scopes and cross-owner non-disclosure at the HTTP boundary', async () => {
