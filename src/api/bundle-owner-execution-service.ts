@@ -48,8 +48,17 @@ function cloneExecution(execution: BundleOwnerExecutionV1): BundleOwnerExecution
 
 function matchesManifestKind(valueKind: string, item: BundleInputItemV1): boolean {
   const normalized = valueKind.toLowerCase();
-  if (['artifact', 'file', 'image', 'video', 'audio', 'binary'].includes(normalized)) {
-    return item.kind === 'artifact' && (!item.mimeType || normalized === 'artifact' || normalized === 'file' || item.mimeType.startsWith(`${normalized}/`));
+  const resourceKind = normalized.endsWith('-resource')
+    ? normalized.slice(0, -'-resource'.length)
+    : normalized;
+  if (['artifact', 'file', 'image', 'video', 'audio', 'binary'].includes(resourceKind)) {
+    return (
+      item.kind === 'artifact' &&
+      (!item.mimeType ||
+        resourceKind === 'artifact' ||
+        resourceKind === 'file' ||
+        item.mimeType.startsWith(`${resourceKind}/`))
+    );
   }
   if (item.kind !== 'value') return false;
   if (['string', 'text', 'prompt', 'url', 'uri'].includes(normalized)) return typeof item.value === 'string';
@@ -105,10 +114,14 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
     }
 
     const scriptVersions = new Map(this.catalog.scriptVersions.map((version) => [version.id, version]));
-    const runtimePackages = new Map(this.catalog.runtimePackages.map((runtimePackage) => [runtimePackage.id, runtimePackage]));
+    const runtimePackages = new Map(
+      this.catalog.runtimePackages.map((runtimePackage) => [runtimePackage.id, runtimePackage]),
+    );
     for (const step of bundle.steps) {
       const script = scriptVersions.get(step.scriptVersionId);
-      if (!script || script.releaseStatus !== 'published') httpError(409, 'bundle references unpublished script version');
+      if (!script || script.releaseStatus !== 'published') {
+        httpError(409, 'bundle references unpublished script version');
+      }
       const runtimePackage = runtimePackages.get(script.runtimePackageId);
       if (!runtimePackage || runtimePackage.validationStatus !== 'valid' || !runtimePackage.executable) {
         httpError(409, 'bundle references non-executable runtime package');
@@ -205,12 +218,15 @@ export class MemoryBundleOwnerExecutionService implements BundleOwnerExecutionSe
   }
 }
 
+function unavailable(): Promise<never> {
+  return Promise.reject(
+    Object.assign(new Error('immutable bundle runtime is not yet available'), { statusCode: 503 }),
+  );
+}
+
 export class UnavailableBundleOwnerExecutionService implements BundleOwnerExecutionService {
-  private unavailable(): never {
-    httpError(503, 'immutable bundle runtime is not yet available');
-  }
-  submit(): Promise<never> { return Promise.reject(Object.assign(new Error('immutable bundle runtime is not yet available'), { statusCode: 503 })); }
-  get(): Promise<never> { return Promise.reject(Object.assign(new Error('immutable bundle runtime is not yet available'), { statusCode: 503 })); }
-  cancel(): Promise<never> { return Promise.reject(Object.assign(new Error('immutable bundle runtime is not yet available'), { statusCode: 503 })); }
-  retrieveArtifact(): Promise<never> { return Promise.reject(Object.assign(new Error('immutable bundle runtime is not yet available'), { statusCode: 503 })); }
+  submit(): Promise<never> { return unavailable(); }
+  get(): Promise<never> { return unavailable(); }
+  cancel(): Promise<never> { return unavailable(); }
+  retrieveArtifact(): Promise<never> { return unavailable(); }
 }
