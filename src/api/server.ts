@@ -4,6 +4,11 @@ import type { Config } from '../config.js';
 import { createLogger } from '../observability/logger.js';
 import { createPool, migrationCurrent } from '../persistence/pool.js';
 import { createAuthVerifier, type AuthVerifier } from './auth.js';
+import { GenericAwareExecutionService } from './generic-aware-execution-service.js';
+import {
+  MemoryGenericExecutionService,
+  PostgresGenericExecutionService,
+} from './generic-execution-service.js';
 import {
   executionRoutes,
   MemoryExecutionService,
@@ -29,6 +34,7 @@ export async function buildServer(options: {
   config: Config;
   verify?: AuthVerifier;
   service?: ExecutionService;
+  genericService?: ExecutionService;
   ready?: () => Promise<boolean>;
 }) {
   if (options.config.ZX_FEATURE_REAL_DEPENDENCIES_ENABLED) {
@@ -83,7 +89,7 @@ export async function buildServer(options: {
   const pool = options.service || !options.config.ZX_DATABASE_URL
     ? undefined
     : createPool(options.config.ZX_DATABASE_URL);
-  const service =
+  const legacyService =
     options.service ??
     (pool
       ? new CompositeExecutionService(
@@ -93,9 +99,21 @@ export async function buildServer(options: {
       : options.config.ZX_NODE_ENV === 'test'
         ? new MemoryExecutionService()
         : undefined);
-  if (!service) {
+  if (!legacyService) {
     throw new Error('ZX_DATABASE_URL required outside explicit test service injection');
   }
+
+  const genericService =
+    options.genericService ??
+    (pool
+      ? new PostgresGenericExecutionService(pool)
+      : options.config.ZX_NODE_ENV === 'test'
+        ? new MemoryGenericExecutionService()
+        : undefined);
+  if (!genericService) {
+    throw new Error('generic execution service requires database or explicit test injection');
+  }
+  const service = new GenericAwareExecutionService(legacyService, genericService);
 
   const verify = options.verify ?? createAuthVerifier(options.config);
   const ready =

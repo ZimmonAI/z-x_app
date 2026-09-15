@@ -1,6 +1,12 @@
 # Z-X Execution Runner
 
-Fixture-first source foundation for the governed `zx.execution.v1` contract. It implements exactly four generic operations: image prompt preparation, image generation, scene-video prompt preparation, and scene-video generation.
+Fixture-first source foundation for the governed Z-X execution contracts. The legacy `zx.execution.v1` worker still implements exactly four operations: image prompt preparation, image generation, scene-video prompt preparation, and scene-video generation. The additive `zx.execution.v2` entrance freezes one generic execution method, payload, runtime requirements, and protected delegated Z-s authority/reference set without widening that legacy worker allowlist.
+
+## Generic execution v2 transport
+
+Consumers can import the generic request contract from `@zimspace/z-x-execution-runner/contracts/v2`. Its optional `storageAccess` field carries bounded opaque Z-s authority/reference values for controlled runtime binding. Z-X preserves those values in protected frozen execution state but does not decode Z-s claims, choose a Storage Service, expose provider routing details, or return protected authority through owner-visible execution responses.
+
+`zx.execution.v2` is currently an admission/freeze/transport boundary. Exact-object input consumption, delegated output handoff, and generalized v2 retry/reconciliation execution are separate runtime work; unsupported v2 retry/reconciliation requests fail closed rather than falling through to legacy operation handling.
 
 ## Source-only setup
 

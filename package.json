@@ -11,6 +11,7 @@
   "main": "dist/src/api/main.js",
   "exports": {
     "./contracts/v1": "./dist/src/contracts/v1/execution.js",
+    "./contracts/v2": "./dist/src/contracts/v2/execution.js",
     "./contracts/video-maker/v1": "./dist/src/contracts/video-maker/v1/index.js",
     "./catalog/v1": "./dist/src/catalog/v1/index.js"
   },
