@@ -4,6 +4,7 @@ const SECRET_VALUE = new RegExp(
   [
     String.raw`bearer\s+[a-z0-9._~+/-]+=*`,
     String.raw`eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+`,
+    String.raw`[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{43}`, 
     String.raw`-----BEGIN [A-Z ]*PRIVATE KEY-----`,
     String.raw`postgres(?:ql)?://[^\s]+`,
     String.raw`mongodb(?:\+srv)?://[^\s]+`,
