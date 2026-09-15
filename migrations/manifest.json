@@ -32,6 +32,14 @@
       "revisionKey": "step-runtime-affinity-v1",
       "expectedTableCountAfterUp": 58,
       "blockedBy": "0003 source synchronization plus approved reviewed SQL for the runtime-affinity extension"
+    },
+    {
+      "id": "0005-generic-execution-authority-transport",
+      "up": "migrations/0005_generic_execution_authority_transport_up.sql",
+      "down": "migrations/0005_generic_execution_authority_transport_down.sql",
+      "enabled": true,
+      "revisionKey": "generic-execution-authority-transport-v1",
+      "expectedTableCountAfterUp": 8
     }
   ]
 }
