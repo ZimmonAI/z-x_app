@@ -38,19 +38,20 @@ test('migration up, rollback, and reapply preserve the enabled schema', async ()
       )
     ).rows[0].n,
   ).toBe(1);
-  expect(
-    (
-      await pool.query(
-        `select pg_get_constraintdef(c.oid) definition
-           from pg_constraint c
-           join pg_class t on t.oid=c.conrelid
-           join pg_namespace n on n.oid=t.relnamespace
-          where n.nspname='execution'
-            and t.relname='execution_requests'
-            and c.conname='execution_requests_contract_version_check'`,
-      )
-    ).rows[0].definition,
-  ).toContain('zx.execution.v2');
+  const requestShape = (
+    await pool.query(
+      `select pg_get_constraintdef(c.oid) definition
+         from pg_constraint c
+         join pg_class t on t.oid=c.conrelid
+         join pg_namespace n on n.oid=t.relnamespace
+        where n.nspname='execution'
+          and t.relname='execution_requests'
+          and c.conname='execution_requests_contract_shape_check'`,
+    )
+  ).rows[0].definition as string;
+  expect(requestShape).toContain('zx.execution.v2');
+  expect(requestShape).toContain('generic.execute.v2');
+  expect(requestShape).toContain('zx.video-maker.execution.v1');
 
   await down(pool);
   expect((await pool.query("select to_regnamespace('execution') is null gone")).rows[0].gone).toBe(
