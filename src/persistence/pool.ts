@@ -36,8 +36,9 @@ export async function migrationCurrent(pool: pg.Pool): Promise<boolean> {
                 join pg_namespace n on n.oid=t.relnamespace
                where n.nspname='execution'
                  and t.relname='execution_requests'
-                 and c.conname='execution_requests_contract_version_check'
+                 and c.conname='execution_requests_contract_shape_check'
                  and pg_get_constraintdef(c.oid) like '%zx.execution.v2%'
+                 and pg_get_constraintdef(c.oid) like '%zx.video-maker.execution.v1%'
             ) as ok`,
   );
   return result.rows[0]?.ok === true;
