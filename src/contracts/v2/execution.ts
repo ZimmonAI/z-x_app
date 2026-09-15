@@ -16,6 +16,10 @@ const safeString = z
   .max(4096)
   .refine(hasNoForbiddenControlCharacters, 'control characters prohibited');
 const safeKey = z.string().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+const delegatedAuthorityKind = safeKey.refine(
+  (kind) => !/(bearer|credential|secret|password)/i.test(kind),
+  'credential-like delegated authority labels are prohibited',
+);
 const checksumSha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const opaqueProtectedReference = z
   .string()
@@ -25,7 +29,7 @@ const opaqueProtectedReference = z
 
 export const DelegatedZsAuthorityV1Schema = z
   .object({
-    kind: safeKey,
+    kind: delegatedAuthorityKind,
     value: opaqueProtectedReference,
   })
   .strict();
