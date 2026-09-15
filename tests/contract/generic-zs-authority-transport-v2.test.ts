@@ -88,7 +88,7 @@ describe('zx.execution.v2 delegated Z-s authority transport', () => {
         request({
           storageAccess: {
             service: 'z-s',
-            authorities: [{ kind: 'owner-bearer', value: 'Bearer secret' }],
+            authorities: [{ kind: 'owner-bearer', value: 'opaque-owner-access-value' }],
           },
         }),
       ),
