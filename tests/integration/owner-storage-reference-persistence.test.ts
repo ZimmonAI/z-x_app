@@ -23,6 +23,8 @@ describe('owner storage reference persistence', () => {
       '0001_execution_foundation_up.sql',
       '0002_video_maker_phase_engine_down.sql',
       '0002_video_maker_phase_engine_up.sql',
+      '0005_generic_execution_authority_transport_down.sql',
+      '0005_generic_execution_authority_transport_up.sql',
       'manifest.json',
     ]);
   });
