@@ -17,22 +17,40 @@ const safeString = z
   .refine(hasNoForbiddenControlCharacters, 'control characters prohibited');
 const safeKey = z.string().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
 const checksumSha256 = z.string().regex(/^[a-f0-9]{64}$/);
-
-// Z-s delegated upload capabilities are intentionally opaque to Z-X. The transport
-// validates only the bounded signed-capability wire shape; claim semantics remain Z-s-owned.
-const delegatedZsCapability = z
+const opaqueProtectedReference = z
   .string()
-  .min(32)
+  .min(1)
   .max(4096)
-  .regex(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:~-]{0,4095}$/);
 
+export const DelegatedZsAuthorityV1Schema = z
+  .object({
+    kind: safeKey,
+    value: opaqueProtectedReference,
+  })
+  .strict();
+
+// Z-X deliberately does not decode or reinterpret these Z-s values. `kind` is an
+// opaque caller/runtime binding label; Z-s remains authoritative for capability
+// validity, producer audience, exact object/service selection, content bounds and expiry.
 export const DelegatedZsStorageAccessV1Schema = z
   .object({
     service: z.literal('z-s'),
-    audience: z.literal('z-x_app'),
-    capability: delegatedZsCapability,
+    authorities: z.array(DelegatedZsAuthorityV1Schema).min(1).max(16),
   })
-  .strict();
+  .strict()
+  .superRefine((access, context) => {
+    const kinds = new Set<string>();
+    for (const authority of access.authorities) {
+      if (kinds.has(authority.kind)) {
+        context.addIssue({
+          code: 'custom',
+          message: `duplicate delegated Z-s authority kind: ${authority.kind}`,
+        });
+      }
+      kinds.add(authority.kind);
+    }
+  });
 
 export const RuntimeRequirementV1Schema = z
   .object({
@@ -99,6 +117,7 @@ export const GenericExecutionViewV2Schema = z
   .strict();
 
 export type ExecutionRequestV2 = z.infer<typeof ExecutionRequestV2Schema>;
+export type DelegatedZsAuthorityV1 = z.infer<typeof DelegatedZsAuthorityV1Schema>;
 export type DelegatedZsStorageAccessV1 = z.infer<typeof DelegatedZsStorageAccessV1Schema>;
 export type RuntimeRequirementV1 = z.infer<typeof RuntimeRequirementV1Schema>;
 export type GenericExecutionViewV2 = z.infer<typeof GenericExecutionViewV2Schema>;
