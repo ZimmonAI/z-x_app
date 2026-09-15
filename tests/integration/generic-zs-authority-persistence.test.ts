@@ -1,9 +1,20 @@
 import type pg from 'pg';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PostgresGenericExecutionService } from '../../src/api/generic-execution-service.js';
 import { reset, testPool } from './db-helper.js';
 
 const CAPABILITY = `${'e'.repeat(96)}.${'f'.repeat(43)}`;
+const READ_REFERENCE = 'exact-object-read:grant-db-1';
+
+function storageAccess(capability = CAPABILITY) {
+  return {
+    service: 'z-s',
+    authorities: [
+      { kind: 'delegated-upload-capability', value: capability },
+      { kind: 'exact-object-read-reference', value: READ_REFERENCE },
+    ],
+  };
+}
 
 function request(overrides: Record<string, unknown> = {}) {
   return {
@@ -15,11 +26,7 @@ function request(overrides: Record<string, unknown> = {}) {
     executionMethodRef: 'browser-generate-v4',
     payload: { input_uri: 'zs://owner/object-1' },
     runtimeRequirements: [],
-    storageAccess: {
-      service: 'z-s',
-      audience: 'z-x_app',
-      capability: CAPABILITY,
-    },
+    storageAccess: storageAccess(),
     traceId: 'trace-db-1',
     ...overrides,
   };
@@ -38,9 +45,7 @@ describe('generic delegated Z-s authority persistence', () => {
     await pool.end();
   });
 
-  afterAll(() => undefined);
-
-  it('persists the exact protected capability while owner reads expose only safe execution truth', async () => {
+  it('persists exact protected authorities while owner reads expose only safe execution truth', async () => {
     const service = new PostgresGenericExecutionService(pool);
     const accepted = await service.submit('neutral-owner_app', request());
     const executionId = (accepted.record as unknown as { executionId: string }).executionId;
@@ -49,7 +54,7 @@ describe('generic delegated Z-s authority persistence', () => {
       contract_version: string;
       operation_type: string;
       request_envelope: {
-        storageAccess?: { capability?: string };
+        storageAccess?: { authorities?: Array<{ kind: string; value: string }> };
         executionMethodRef?: string;
       };
     }>(
@@ -64,10 +69,13 @@ describe('generic delegated Z-s authority persistence', () => {
       operation_type: 'generic.execute.v2',
       request_envelope: { executionMethodRef: 'browser-generate-v4' },
     });
-    expect(persisted.rows[0]?.request_envelope.storageAccess?.capability).toBe(CAPABILITY);
+    expect(persisted.rows[0]?.request_envelope.storageAccess?.authorities).toEqual(
+      storageAccess().authorities,
+    );
 
     const visible = await service.get('neutral-owner_app', executionId);
     expect(JSON.stringify(visible)).not.toContain(CAPABILITY);
+    expect(JSON.stringify(visible)).not.toContain(READ_REFERENCE);
     expect(visible).toMatchObject({
       contractVersion: 'zx.execution.v2',
       executionId,
@@ -76,25 +84,19 @@ describe('generic delegated Z-s authority persistence', () => {
     expect(await service.get('other-owner_app', executionId)).toBeNull();
   });
 
-  it('rejects a changed delegated capability under an existing idempotency identity', async () => {
+  it('rejects a changed delegated authority under an existing idempotency identity', async () => {
     const service = new PostgresGenericExecutionService(pool);
     await service.submit('neutral-owner_app', request());
 
     await expect(
       service.submit(
         'neutral-owner_app',
-        request({
-          storageAccess: {
-            service: 'z-s',
-            audience: 'z-x_app',
-            capability: `${'g'.repeat(96)}.${'h'.repeat(43)}`,
-          },
-        }),
+        request({ storageAccess: storageAccess(`${'g'.repeat(96)}.${'h'.repeat(43)}`) }),
       ),
     ).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it('preserves the frozen authority across owner cancellation without returning it', async () => {
+  it('preserves frozen authorities across owner cancellation without returning them', async () => {
     const service = new PostgresGenericExecutionService(pool);
     const accepted = await service.submit('neutral-owner_app', request());
     const executionId = (accepted.record as unknown as { executionId: string }).executionId;
@@ -103,13 +105,19 @@ describe('generic delegated Z-s authority persistence', () => {
     expect(cancelled?.record).toMatchObject({ status: 'cancelled' });
     expect(JSON.stringify(cancelled?.record)).not.toContain(CAPABILITY);
 
-    const persisted = await pool.query<{ request_envelope: { storageAccess?: { capability?: string } } }>(
+    const persisted = await pool.query<{
+      request_envelope: {
+        storageAccess?: { authorities?: Array<{ kind: string; value: string }> };
+      };
+    }>(
       `select r.request_envelope
          from execution.execution_requests r
          join execution.executions e on e.request_id=r.id
         where e.id=$1`,
       [executionId],
     );
-    expect(persisted.rows[0]?.request_envelope.storageAccess?.capability).toBe(CAPABILITY);
+    expect(persisted.rows[0]?.request_envelope.storageAccess?.authorities).toEqual(
+      storageAccess().authorities,
+    );
   });
 });
