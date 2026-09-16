@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
+import type { TemporaryArtifactClient } from '../artifacts/temporary.js';
 import { getAdapter } from '../adapters/registry.js';
 import type { AdapterOutput } from '../adapters/types.js';
 import { fixtureScenario } from '../adapters/types.js';
@@ -23,6 +24,7 @@ export interface FixtureDependencies {
   capacity: ZAccountCapacityClient;
   autoHub: AutoHubDispatchClient;
   storage: ZStorageClient;
+  temporaryArtifacts?: TemporaryArtifactClient;
   owner?: VideoMakerExecutionPort;
 }
 
@@ -42,7 +44,7 @@ interface PreparationClaim {
 
 interface AttemptProviderOutputRecord {
   externalRunRef?: string;
-  safeProviderOutputRef: string;
+  safeProviderOutputRef?: string;
 }
 
 function toSafeError(error: unknown, traceId: string): SafeErrorV1 {
@@ -95,6 +97,7 @@ async function recordProviderOutputForClaim(
   claim: ClaimedExecution,
   input: AttemptProviderOutputRecord,
 ): Promise<void> {
+  if (input.externalRunRef === undefined && input.safeProviderOutputRef === undefined) return;
   await withTransaction(pool, async (client) => {
     const selected = await client.query<{
       external_run_ref: string | null;
@@ -110,13 +113,14 @@ async function recordProviderOutputForClaim(
     const row = selected.rows[0];
     if (!row) throw new Error('lease lost before provider output persistence');
     if (
+      input.safeProviderOutputRef !== undefined &&
       row.safe_provider_output_ref !== null &&
       row.safe_provider_output_ref !== input.safeProviderOutputRef
     ) {
       throw new SafeExecutionError({
         family: 'reconciliation-required',
         code: 'ZX_PROVIDER_OUTPUT_REF_CONFLICT',
-        message: 'provider output reference replacement was rejected',
+        message: 'recoverable output reference replacement was rejected',
         retryable: false,
         traceId: 'internal',
       });
@@ -146,7 +150,7 @@ async function recordProviderOutputForClaim(
         claim.executionId,
         claim.leaseToken,
         input.externalRunRef ?? null,
-        input.safeProviderOutputRef,
+        input.safeProviderOutputRef ?? null,
       ],
     );
   });
@@ -215,6 +219,7 @@ export async function executePreparedFixturePath(
     signal,
     autoHub: dependencies.autoHub,
     storage: dependencies.storage,
+    temporaryArtifacts: dependencies.temporaryArtifacts,
     recordProviderOutput: persistence?.recordProviderOutput ?? (async () => {}),
     recordOutputAuthorization: persistence?.recordOutputAuthorization ?? (async () => {}),
   });
@@ -592,7 +597,7 @@ export async function completeClaimedExecution(
         adapterId: row.route_snapshot.adapterId,
         adapterVersion: row.route_snapshot.adapterVersion,
         runtimeBindingRef: row.capacity_snapshot.runtimeBindingRef,
-        fixtureVersion: 'fixture-v1',
+        ...(fixtureScenario(request) === undefined ? {} : { fixtureVersion: 'fixture-v1' }),
         startedAt: row.started_at.toISOString(),
         completedAt,
       },

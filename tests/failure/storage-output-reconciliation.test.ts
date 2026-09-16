@@ -87,7 +87,9 @@ function context(input: {
     autoHub,
     storage: input.storage,
     async recordProviderOutput(record) {
-      input.providerRefs.push(record.safeProviderOutputRef);
+      if (record.safeProviderOutputRef !== undefined) {
+        input.providerRefs.push(record.safeProviderOutputRef);
+      }
     },
     async recordOutputAuthorization(authorizationRef) {
       input.authorizationRefs.push(authorizationRef);

@@ -1,5 +1,10 @@
+import type { TemporaryArtifactClient } from '../artifacts/temporary.js';
 import type { AutoHubDispatchClient } from '../clients/auto-hub.js';
-import type { ExactObjectReadResultV1, ZStorageClient } from '../clients/z-s.js';
+import type {
+  DelegatedStorageResultV1,
+  ExactObjectReadResultV1,
+  ZStorageClient,
+} from '../clients/z-s.js';
 import type {
   CapacitySnapshotV1,
   FixtureScenario,
@@ -12,7 +17,13 @@ import {
   type ExecutionRequestV1,
   type OperationType,
 } from '../contracts/v1/execution.js';
+import type { OwnerCorrelatedStorageOutputV1 } from '../contracts/v1/result.js';
 import { validateGeneratedMedia } from '../validation/output.js';
+
+export const DELEGATED_OUTPUT_WRITE_AUTHORITY_NAME = 'output.primary.write' as const;
+export const DELEGATED_OUTPUT_WRITE_INTENT_INPUT = 'zSOutputWriteIntentId' as const;
+
+const SAFE_TECHNICAL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$/;
 
 const FIXTURE_SCENARIOS = new Set<FixtureScenario>([
   'success',
@@ -39,20 +50,22 @@ export interface AdapterContext {
   signal: AbortSignal;
   autoHub: AutoHubDispatchClient;
   storage: ZStorageClient;
+  temporaryArtifacts?: TemporaryArtifactClient;
   recordProviderOutput(input: {
     externalRunRef?: string;
-    safeProviderOutputRef: string;
+    safeProviderOutputRef?: string;
   }): Promise<void>;
   /**
-   * Compatibility persistence slot. For owner-led requests this stores the opaque
-   * owner/delegated output access reference; Z-X does not create that authority.
+   * Compatibility persistence slot. For delegated Z-s writes this stores only the
+   * public exact write-intent identity. The bounded capability stays frozen in the
+   * immutable request and is never copied into attempt/result metadata.
    */
   recordOutputAuthorization(authorizationRef: string): Promise<void>;
 }
 
 export interface AdapterOutput {
   promptText?: string;
-  media?: StorageResultV1;
+  media?: StorageResultV1 | OwnerCorrelatedStorageOutputV1;
   externalRunRef?: string;
   safeProviderOutputRef?: string;
 }
@@ -121,57 +134,91 @@ export async function consumeDelegatedExactObject(
   );
 }
 
-export async function dispatchAndStoreMedia(
-  context: AdapterContext,
-  kind: 'image' | 'video',
-): Promise<AdapterOutput> {
-  const scenario = fixtureScenario(context.request);
-  const ownerStorageAccess = context.request.ownerStorageAccess;
-
-  // Fixture compatibility is explicit. Every non-fixture generated-media request
-  // must carry owner-issued access, and the reference is persisted before any
-  // provider action. The delegated Z-s transport is not owner-published yet, so
-  // real execution stops truthfully at this exact pre-dispatch boundary.
-  if (scenario === undefined) {
-    if (!ownerStorageAccess) {
-      throw new SafeExecutionError({
-        family: 'invalid-owner-request',
-        code: 'ZX_OWNER_STORAGE_ACCESS_REQUIRED',
-        message: 'owner-issued storage access is required for real generated media',
-        retryable: false,
-        traceId: context.request.traceId,
-      });
-    }
-    if (ownerStorageAccess.artifactKind !== kind) {
-      throw new SafeExecutionError({
-        family: 'invalid-owner-request',
-        code: 'ZX_OWNER_STORAGE_ARTIFACT_KIND_MISMATCH',
-        message: 'owner-issued storage access does not match the generated artifact kind',
-        retryable: false,
-        traceId: context.request.traceId,
-      });
-    }
-    await context.recordOutputAuthorization(ownerStorageAccess.outputWriteGrantRef);
+export function delegatedOutputWriteIntentId(request: ExecutionRequestV1): string {
+  const value = requiredScalarString(request, DELEGATED_OUTPUT_WRITE_INTENT_INPUT);
+  if (value.trim() !== value || !SAFE_TECHNICAL_ID.test(value)) {
     throw new SafeExecutionError({
-      family: 'adapter-unavailable',
-      code: 'ZX_Z_S_DELEGATED_OUTPUT_NOT_READY',
-      message: 'the delegated owner-issued Z-s output transport is not ready',
-      retryable: true,
-      traceId: context.request.traceId,
-    });
-  }
-
-  const storageOutput = context.request.storageOutput;
-  const mode = storageOutput?.mode ?? 'post-run-ingest';
-  if (mode === 'direct-write') {
-    throw new SafeExecutionError({
-      family: 'adapter-unavailable',
-      code: 'ZX_DIRECT_WRITE_UNSUPPORTED',
-      message: 'direct-write storage output is not supported by this adapter path',
+      family: 'invalid-owner-request',
+      code: 'ZX_Z_S_OUTPUT_WRITE_INTENT_INVALID',
+      message: 'the exact owner-authorized Z-s write intent identity is invalid',
       retryable: false,
-      traceId: context.request.traceId,
+      traceId: request.traceId,
     });
   }
+  return value;
+}
+
+export function delegatedOutputWriteAuthority(request: ExecutionRequestV1): string {
+  const authority =
+    getDelegatedAuthorityReference(request, DELEGATED_OUTPUT_WRITE_AUTHORITY_NAME) ??
+    request.ownerStorageAccess?.outputWriteGrantRef;
+  if (!authority) {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_Z_S_OUTPUT_AUTHORITY_REQUIRED',
+      message: 'the bounded owner-authorized Z-s output authority is required',
+      retryable: false,
+      traceId: request.traceId,
+    });
+  }
+  return authority;
+}
+
+export function ownerCorrelatedDelegatedStorageResult(
+  request: ExecutionRequestV1,
+  result: Readonly<DelegatedStorageResultV1>,
+  kind: 'image' | 'video',
+): OwnerCorrelatedStorageOutputV1 {
+  const ownerStorageAccess = request.ownerStorageAccess;
+  if (!ownerStorageAccess) {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_OWNER_STORAGE_ACCESS_REQUIRED',
+      message: 'owner-issued storage access is required for delegated output handoff',
+      retryable: false,
+      traceId: request.traceId,
+    });
+  }
+  if (result.mimeType !== request.requestedOutputType) {
+    throw new SafeExecutionError({
+      family: 'malformed-output',
+      code: 'ZX_Z_S_OUTPUT_MIME_MISMATCH',
+      message: 'the durable Z-s output MIME did not match the frozen execution request',
+      retryable: false,
+      traceId: request.traceId,
+    });
+  }
+  if (result.width === undefined || result.height === undefined) {
+    throw new SafeExecutionError({
+      family: 'malformed-output',
+      code: 'ZX_MEDIA_DIMENSIONS_MISSING',
+      message: 'stored media dimensions are missing',
+      retryable: true,
+      traceId: request.traceId,
+    });
+  }
+  validateGeneratedMedia(kind, {
+    mimeType: result.mimeType,
+    sizeBytes: result.sizeBytes,
+    width: result.width,
+    height: result.height,
+    checksumSha256: result.checksumSha256,
+    storageIdentity: `zs://storage-objects/${result.storageObjectId}`,
+    ...(result.durationSeconds === undefined ? {} : { durationSeconds: result.durationSeconds }),
+  });
+  return {
+    pendingResourceId: ownerStorageAccess.pendingResourceId,
+    storageObjectId: result.storageObjectId,
+    checksumSha256: result.checksumSha256,
+    mimeType: result.mimeType,
+    sizeBytes: result.sizeBytes,
+    width: result.width,
+    height: result.height,
+    ...(result.durationSeconds === undefined ? {} : { durationSeconds: result.durationSeconds }),
+  };
+}
+
+async function runProvider(context: AdapterContext, scenario: FixtureScenario | undefined) {
   const started = await context.autoHub.startRun(
     {
       operation: context.request.operationType,
@@ -217,7 +264,8 @@ export async function dispatchAndStoreMedia(
       traceId: context.request.traceId,
     });
   }
-  if (run.status !== 'succeeded' || !run.safeOutputRef) {
+  const safeOutputRef = run.safeOutputRef;
+  if (run.status !== 'succeeded' || !safeOutputRef) {
     throw new SafeExecutionError({
       family: 'malformed-output',
       code: 'ZX_PROVIDER_OUTPUT_MISSING',
@@ -226,7 +274,130 @@ export async function dispatchAndStoreMedia(
       traceId: context.request.traceId,
     });
   }
+  return { ...run, safeOutputRef };
+}
 
+async function directOwnerAuthorizedHandoff(
+  context: AdapterContext,
+  kind: 'image' | 'video',
+): Promise<AdapterOutput> {
+  const ownerStorageAccess = context.request.ownerStorageAccess;
+  if (!ownerStorageAccess) {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_OWNER_STORAGE_ACCESS_REQUIRED',
+      message: 'owner-issued storage access is required for real generated media',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
+  if (ownerStorageAccess.artifactKind !== kind) {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_OWNER_STORAGE_ARTIFACT_KIND_MISMATCH',
+      message: 'owner-issued storage access does not match the generated artifact kind',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
+  if (!ownerStorageAccess.acceptedMimeTypes.includes(context.request.requestedOutputType)) {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_OWNER_STORAGE_MIME_MISMATCH',
+      message: 'owner-issued storage access does not accept the requested output MIME',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
+
+  const writeIntentId = delegatedOutputWriteIntentId(context.request);
+  const writeAuthorityRef = delegatedOutputWriteAuthority(context.request);
+  const temporaryArtifacts = context.temporaryArtifacts;
+  if (!temporaryArtifacts) {
+    throw new SafeExecutionError({
+      family: 'adapter-unavailable',
+      code: 'ZX_TEMP_ARTIFACT_RUNTIME_REQUIRED',
+      message: 'temporary artifact recovery is required for delegated durable output handoff',
+      retryable: true,
+      traceId: context.request.traceId,
+    });
+  }
+  if (context.storage.writeDelegatedOutput === undefined) {
+    throw new SafeExecutionError({
+      family: 'adapter-unavailable',
+      code: 'ZX_Z_S_DELEGATED_OUTPUT_WRITER_UNAVAILABLE',
+      message: 'the governed Z-s delegated output writer is unavailable',
+      retryable: true,
+      traceId: context.request.traceId,
+    });
+  }
+
+  const run = await runProvider(context, undefined);
+  await context.recordProviderOutput({ externalRunRef: run.runRef });
+
+  const scope = {
+    ownerApp: context.request.ownerApp,
+    ...(context.request.ownerProjectId === undefined
+      ? {}
+      : { ownerProjectId: context.request.ownerProjectId }),
+    executionId: context.executionId,
+    attemptId: context.attemptId,
+  };
+  const captured = await temporaryArtifacts.capture(
+    {
+      ...scope,
+      safeSourceRef: run.safeOutputRef,
+      expectedMimeType: context.request.requestedOutputType,
+      ...(ownerStorageAccess.maxBytes === undefined ? {} : { maxBytes: ownerStorageAccess.maxBytes }),
+    },
+    context.signal,
+  );
+  await context.recordProviderOutput({ safeProviderOutputRef: captured.artifactRef });
+  await context.recordOutputAuthorization(writeIntentId);
+
+  const artifact = await temporaryArtifacts.open(
+    { ...scope, artifactRef: captured.artifactRef },
+    context.signal,
+  );
+  const stored = await context.storage.writeDelegatedOutput(
+    {
+      executionId: context.executionId,
+      attemptId: context.attemptId,
+      writeIntentId,
+      writeAuthorityRef,
+      artifact,
+    },
+    context.signal,
+  );
+  const media = ownerCorrelatedDelegatedStorageResult(context.request, stored, kind);
+  return {
+    media,
+    externalRunRef: run.runRef,
+    safeProviderOutputRef: captured.artifactRef,
+  };
+}
+
+export async function dispatchAndStoreMedia(
+  context: AdapterContext,
+  kind: 'image' | 'video',
+): Promise<AdapterOutput> {
+  const scenario = fixtureScenario(context.request);
+  if (scenario === undefined) {
+    return directOwnerAuthorizedHandoff(context, kind);
+  }
+
+  const storageOutput = context.request.storageOutput;
+  const mode = storageOutput?.mode ?? 'post-run-ingest';
+  if (mode === 'direct-write') {
+    throw new SafeExecutionError({
+      family: 'adapter-unavailable',
+      code: 'ZX_DIRECT_WRITE_UNSUPPORTED',
+      message: 'fixture direct-write storage output is not supported by this adapter path',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
+  const run = await runProvider(context, scenario);
   const mimeType = context.request.requestedOutputType;
   await context.recordProviderOutput({
     externalRunRef: run.runRef,
