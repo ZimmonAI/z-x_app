@@ -3,7 +3,7 @@
   "project": {
     "id": "z-x",
     "name": "Z-X",
-    "description": "Generic governed execution runner for approved Zimspace routes.",
+    "description": "Generic governed execution foundation for Zimspace runtime methods.",
     "sortOrder": 40
   },
   "apps": [
@@ -22,9 +22,7 @@
       "listenHost": "127.0.0.1",
       "envFile": "{ZIMSPACE_ROOT}\\workspace-os\\storage\\z_secret\\by_entity\\apps\\z-x_app\\auth\\.env",
       "isGateway": false,
-      "autoStartWith": [
-        "z-x"
-      ],
+      "autoStartWith": ["z-x"],
       "actionsEnabled": false,
       "includeInGitSync": true,
       "sortOrder": 5
@@ -32,7 +30,7 @@
     {
       "id": "z-x-execution-runner-api",
       "name": "Z-X Execution API",
-      "description": "Authenticated internal execution submission and status API.",
+      "description": "Authenticated internal neutral execution submission and status API.",
       "type": "fastify",
       "role": "main",
       "workingDir": ".",
@@ -44,12 +42,8 @@
       "listenHost": "0.0.0.0",
       "envFile": "{ZIMSPACE_ROOT}\\workspace-os\\storage\\z_secret\\by_entity\\apps\\z-x_app\\runtime\\api.env",
       "isGateway": false,
-      "autoStartWith": [
-        "z-x"
-      ],
-      "dependsOn": [
-        "z-x-fixture-auth"
-      ],
+      "autoStartWith": ["z-x"],
+      "dependsOn": ["z-x-fixture-auth"],
       "actionsEnabled": true,
       "includeInGitSync": true,
       "sortOrder": 10
@@ -57,7 +51,7 @@
     {
       "id": "z-x-execution-runner-worker",
       "name": "Z-X Execution Worker",
-      "description": "Durable worker for Z-X execution attempts.",
+      "description": "Neutral worker control skeleton; execution claims remain disabled until the generic method runtime is implemented.",
       "type": "service",
       "role": "support",
       "workingDir": ".",
@@ -68,9 +62,7 @@
       "publicUrl": null,
       "envFile": "{ZIMSPACE_ROOT}\\workspace-os\\storage\\z_secret\\by_entity\\apps\\z-x_app\\runtime\\worker.env",
       "isGateway": false,
-      "autoStartWith": [
-        "z-x"
-      ],
+      "autoStartWith": ["z-x"],
       "parentAppId": "z-x-execution-runner-api",
       "actionsEnabled": true,
       "includeInGitSync": true,

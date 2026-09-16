@@ -12,10 +12,6 @@ import {
 } from './routes/executions.js';
 import { healthRoutes } from './routes/health.js';
 import { readinessRoutes } from './routes/readiness.js';
-import {
-  CompositeExecutionService,
-  PostgresVideoMakerExecutionService,
-} from './video-maker-execution-service.js';
 
 const MAX_RESPONSE_BYTES = 512 * 1024;
 
@@ -31,10 +27,6 @@ export async function buildServer(options: {
   service?: ExecutionService;
   ready?: () => Promise<boolean>;
 }) {
-  if (options.config.ZX_FEATURE_REAL_DEPENDENCIES_ENABLED) {
-    throw new Error('real dependency clients remain disabled pending owner-published contracts');
-  }
-
   const app = Fastify({
     loggerInstance: createLogger(options.config.ZX_LOG_LEVEL),
     bodyLimit: 256 * 1024,
@@ -86,10 +78,7 @@ export async function buildServer(options: {
   const service =
     options.service ??
     (pool
-      ? new CompositeExecutionService(
-          new PostgresExecutionService(pool),
-          new PostgresVideoMakerExecutionService(pool),
-        )
+      ? new PostgresExecutionService(pool)
       : options.config.ZX_NODE_ENV === 'test'
         ? new MemoryExecutionService()
         : undefined);

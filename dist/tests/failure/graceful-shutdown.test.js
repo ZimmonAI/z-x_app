@@ -1,3 +1,0 @@
-import { ShutdownController } from '../../src/worker/shutdown.js';
-test('drain deadline reports unfinished work', async () => { const c = new ShutdownController(); expect(await c.drain(new Set([new Promise(() => { })]), 5)).toBe(false); });
-//# sourceMappingURL=graceful-shutdown.test.js.map
