@@ -26,6 +26,7 @@ const safeString = z
   .min(1)
   .max(4096)
   .refine(hasNoForbiddenControlCharacters, 'control characters prohibited');
+const safeKey = z.string().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
 
 const safeMimeType = safeString.regex(/^[a-z][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/);
 
@@ -66,6 +67,15 @@ export function isOpaqueOwnerCapabilityReference(value: string): boolean {
 const opaqueCapabilityReference = safeString
   .max(512)
   .refine(isOpaqueOwnerCapabilityReference, 'owner capability reference must be opaque');
+
+export const DelegatedAuthorityReferenceV1Schema = z
+  .object({
+    name: safeKey,
+    reference: opaqueCapabilityReference,
+  })
+  .strict();
+
+export type DelegatedAuthorityReferenceV1 = z.infer<typeof DelegatedAuthorityReferenceV1Schema>;
 
 export const StorageOutputRequestV1Schema = z
   .object({
@@ -187,6 +197,13 @@ export const ExecutionRequestV1Schema = z
     operationType: z.enum(OPERATION_TYPES),
     frozenInputResources: z.array(ResourceReferenceV1Schema).max(32),
     safeScalarInputs: z.record(z.string(), z.unknown()),
+    delegatedAuthorities: z
+      .array(DelegatedAuthorityReferenceV1Schema)
+      .max(32)
+      .refine((items) => hasUniqueValues(items.map((item) => item.name)), {
+        message: 'delegated authority names must be unique',
+      })
+      .default([]),
     routeLocks: RouteLocksV1Schema,
     requestedOutputType: safeMimeType,
     ownerStorageAccess: OwnerStorageAccessV1Schema.optional(),
@@ -257,3 +274,10 @@ export type ExecutionRequestV1 = z.infer<typeof ExecutionRequestV1Schema>;
 export type StorageOutputRequestV1 = z.infer<typeof StorageOutputRequestV1Schema>;
 export type OwnerStorageAccessV1 = z.infer<typeof OwnerStorageAccessV1Schema>;
 export type OwnerInputResourceV1 = z.infer<typeof ResourceReferenceV1Schema>;
+
+export function getDelegatedAuthorityReference(
+  request: Pick<ExecutionRequestV1, 'delegatedAuthorities'>,
+  name: string,
+): string | undefined {
+  return request.delegatedAuthorities.find((authority) => authority.name === name)?.reference;
+}
