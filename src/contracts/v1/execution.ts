@@ -195,6 +195,7 @@ export const ExecutionRequestV1Schema = z
     idempotencyKey: safeString,
     requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     operationType: z.enum(OPERATION_TYPES),
+    executionMethodRef: safeString.max(512).optional(),
     frozenInputResources: z.array(ResourceReferenceV1Schema).max(32),
     safeScalarInputs: z.record(z.string(), z.unknown()),
     delegatedAuthorities: z
@@ -227,6 +228,14 @@ export const ExecutionRequestV1Schema = z
     const fixtureMode = typeof request.safeScalarInputs.fixtureScenario === 'string';
     const ownerStorageAccess = request.ownerStorageAccess;
     const storageOutput = request.storageOutput;
+
+    if (generatedMedia && !fixtureMode && !request.executionMethodRef) {
+      context.addIssue({
+        code: 'custom',
+        path: ['executionMethodRef'],
+        message: 'ZX_EXECUTION_METHOD_REF_REQUIRED',
+      });
+    }
 
     if (generatedMedia && !fixtureMode && !ownerStorageAccess) {
       context.addIssue({
