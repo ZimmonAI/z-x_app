@@ -9,6 +9,7 @@ function request(overrides: Record<string, unknown> = {}) {
     idempotencyKey: 'owner-action-1',
     requestFingerprint: 'a'.repeat(64),
     operationType: 'image.generate.v1',
+    executionMethodRef: 'vm-method:image.generate:variant-1',
     frozenInputResources: [
       {
         resourceId: 'vm_resource_1',
@@ -43,6 +44,11 @@ describe('owner storage access v1', () => {
       parsed.frozenInputResources[0]?.storageObjectId,
     );
     expect(parsed.ownerStorageAccess?.pendingResourceId).toBe('vm_pending_resource_1');
+  });
+
+  it('requires immutable execution method identity for non-fixture generated media', () => {
+    const candidate = request({ executionMethodRef: undefined });
+    expect(() => ExecutionRequestV1Schema.parse(candidate)).toThrow(/ZX_EXECUTION_METHOD_REF_REQUIRED/);
   });
 
   it('requires owner storage access for non-fixture generated media', () => {
