@@ -564,7 +564,7 @@ async function reconcileDelegatedStorage(
       traceId: claim.request.traceId,
     });
   }
-  const authority = delegatedOutputWriteAuthority(claim.request);
+  const writeAuthorizationRef = delegatedOutputWriteAuthority(claim.request);
   const artifact = await temporaryArtifacts.open(
     {
       ownerApp: claim.request.ownerApp,
@@ -577,12 +577,35 @@ async function reconcileDelegatedStorage(
     },
     signal,
   );
+  const intent = await dependencies.storage.createDelegatedOutputWriteIntent(
+    {
+      executionId: claim.executionId,
+      attemptId: claim.attemptId,
+      writeAuthorizationRef,
+      artifact: {
+        artifactRef: artifact.artifactRef,
+        mimeType: artifact.mimeType,
+        sizeBytes: artifact.sizeBytes,
+        checksumSha256: artifact.checksumSha256,
+      },
+    },
+    signal,
+  );
+  if (intent.writeIntentId !== claim.authorizationRef) {
+    throw new SafeExecutionError({
+      family: 'storage-output-failure',
+      code: 'ZX_Z_S_DELEGATED_INTENT_IDENTITY_CONFLICT',
+      message: 'recovery returned a different Z-s write intent identity',
+      retryable: false,
+      traceId: claim.request.traceId,
+    });
+  }
   const stored = await dependencies.storage.writeDelegatedOutput(
     {
       executionId: claim.executionId,
       attemptId: claim.attemptId,
-      writeIntentId: claim.authorizationRef,
-      writeAuthorityRef: authority,
+      writeIntentId: intent.writeIntentId,
+      writeAuthorityRef: intent.uploadCompletionToken,
       artifact,
     },
     signal,
