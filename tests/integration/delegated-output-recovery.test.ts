@@ -87,6 +87,7 @@ function delegatedImageRequest() {
   return {
     ...validRequest('image.generate.v1'),
     idempotencyKey: 'delegated-output-recovery-1',
+    executionMethodRef: 'execution-method-fixture-01',
     safeScalarInputs: {
       prompt: 'cinematic sunrise',
     },
