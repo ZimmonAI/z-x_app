@@ -86,6 +86,7 @@ export type FixtureScenario =
 
 export interface ResolveRouteV1 {
   operation: OperationType;
+  executionMethodRef?: string;
   routeLocks: Record<string, string>;
   fixtureScenario?: FixtureScenario;
 }
@@ -109,10 +110,23 @@ export interface ReportCapacityOutcomeV1 {
   outcome: string;
 }
 
+export interface PreparedExecutionInputV1 {
+  resourceId: string;
+  resourceVersionId?: string;
+  storageObjectId: string;
+  kind: string;
+  role?: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksumSha256: string;
+  body: ReadableStream<Uint8Array>;
+}
+
 export interface StartRunV1 {
   operation: OperationType;
   adapterId: string;
   runtimeBindingRef: string;
+  preparedInputs?: readonly PreparedExecutionInputV1[];
   fixtureScenario?: FixtureScenario;
 }
 
