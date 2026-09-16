@@ -13,13 +13,20 @@ const MAX_REQUEST_TIMEOUT_MS = 60_000;
 const CHECKSUM_ETAG = /^"([a-f0-9]{64})"$/;
 const MIME_TYPE = /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/i;
 
+function hasForbiddenControlCharacters(value: string): boolean {
+  return Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint < 32 || codePoint === 127;
+  });
+}
+
 function requiredHeaderString(value: string | null, label: string, maxLength: number): string {
   if (
     value === null ||
     value.length === 0 ||
     value.length > maxLength ||
     value.trim() !== value ||
-    /[\u0000-\u001f\u007f]/.test(value)
+    hasForbiddenControlCharacters(value)
   ) {
     throw new Error(`${label} is invalid`);
   }
@@ -32,7 +39,7 @@ function exactStorageObjectPath(storageObjectId: string): string {
     storageObjectId.length === 0 ||
     storageObjectId.length > 512 ||
     storageObjectId.trim() !== storageObjectId ||
-    /[\u0000-\u001f\u007f]/.test(storageObjectId)
+    hasForbiddenControlCharacters(storageObjectId)
   ) {
     throw new SafeExecutionError({
       family: 'invalid-owner-request',
@@ -51,7 +58,7 @@ function readAuthority(value: string): string {
     value.length < 1 ||
     value.length > 4096 ||
     value.trim() !== value ||
-    /[\u0000-\u001f\u007f]/.test(value)
+    hasForbiddenControlCharacters(value)
   ) {
     throw new SafeExecutionError({
       family: 'invalid-owner-request',
