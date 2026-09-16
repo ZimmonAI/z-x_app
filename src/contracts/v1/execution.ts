@@ -58,14 +58,14 @@ const forbiddenCapabilityFragments = [
 ] as const;
 
 export function isOpaqueOwnerCapabilityReference(value: string): boolean {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$/.test(value)) return false;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,4095}$/.test(value)) return false;
   if (value.includes('/') || value.includes('\\') || value.includes('@')) return false;
   const normalized = value.toLowerCase();
   return !forbiddenCapabilityFragments.some((fragment) => normalized.includes(fragment));
 }
 
 const opaqueCapabilityReference = safeString
-  .max(512)
+  .max(4096)
   .refine(isOpaqueOwnerCapabilityReference, 'owner capability reference must be opaque');
 
 export const DelegatedAuthorityReferenceV1Schema = z
