@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import type {
+  DelegatedOutputIntentV1,
+  DelegatedOutputIntentResultV1,
   DelegatedOutputWriteV1,
   DelegatedStorageResultV1,
   ZStorageClient,
@@ -131,6 +133,31 @@ export class ZStorageFixtureV1 implements ZStorageClient {
     return {
       readGrantRef: `read_${input.resourceId}`,
       expiresAt: new Date(60000).toISOString(),
+    };
+  }
+
+  async createDelegatedOutputWriteIntent(
+    input: DelegatedOutputIntentV1,
+    _signal: AbortSignal,
+  ): Promise<DelegatedOutputIntentResultV1> {
+    const digest = createHash('sha256')
+      .update(
+        [
+          input.executionId,
+          input.attemptId,
+          input.artifact.artifactRef,
+          input.artifact.mimeType,
+          String(input.artifact.sizeBytes),
+          input.artifact.checksumSha256,
+        ].join('\u0000'),
+      )
+      .digest('hex');
+    const writeIntentId = `intent_fixture_${digest.slice(0, 24)}`;
+    return {
+      writeIntentId,
+      storageObjectId: `zs_object_${writeIntentId}`,
+      uploadCompletionToken: `upload_fixture_${digest.slice(24, 56)}`,
+      expiresAt: new Date(60_000).toISOString(),
     };
   }
 
