@@ -21,10 +21,6 @@ import type { OwnerCorrelatedStorageOutputV1 } from '../contracts/v1/result.js';
 import { validateGeneratedMedia } from '../validation/output.js';
 
 export const DELEGATED_OUTPUT_WRITE_AUTHORITY_NAME = 'output.primary.write' as const;
-export const DELEGATED_OUTPUT_WRITE_INTENT_INPUT = 'zSOutputWriteIntentId' as const;
-
-const SAFE_TECHNICAL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,511}$/;
-
 const FIXTURE_SCENARIOS = new Set<FixtureScenario>([
   'success',
   'route-not-found',
@@ -132,20 +128,6 @@ export async function consumeDelegatedExactObject(
     },
     context.signal,
   );
-}
-
-export function delegatedOutputWriteIntentId(request: ExecutionRequestV1): string {
-  const value = requiredScalarString(request, DELEGATED_OUTPUT_WRITE_INTENT_INPUT);
-  if (value.trim() !== value || !SAFE_TECHNICAL_ID.test(value)) {
-    throw new SafeExecutionError({
-      family: 'invalid-owner-request',
-      code: 'ZX_Z_S_OUTPUT_WRITE_INTENT_INVALID',
-      message: 'the exact owner-authorized Z-s write intent identity is invalid',
-      retryable: false,
-      traceId: request.traceId,
-    });
-  }
-  return value;
 }
 
 export function delegatedOutputWriteAuthority(request: ExecutionRequestV1): string {
@@ -310,8 +292,7 @@ async function directOwnerAuthorizedHandoff(
     });
   }
 
-  const writeIntentId = delegatedOutputWriteIntentId(context.request);
-  const writeAuthorityRef = delegatedOutputWriteAuthority(context.request);
+  const writeAuthorizationRef = delegatedOutputWriteAuthority(context.request);
   const temporaryArtifacts = context.temporaryArtifacts;
   if (!temporaryArtifacts) {
     throw new SafeExecutionError({
@@ -353,18 +334,33 @@ async function directOwnerAuthorizedHandoff(
     context.signal,
   );
   await context.recordProviderOutput({ safeProviderOutputRef: captured.artifactRef });
-  await context.recordOutputAuthorization(writeIntentId);
 
   const artifact = await temporaryArtifacts.open(
     { ...scope, artifactRef: captured.artifactRef },
     context.signal,
   );
+  const intent = await context.storage.createDelegatedOutputWriteIntent(
+    {
+      executionId: context.executionId,
+      attemptId: context.attemptId,
+      writeAuthorizationRef,
+      artifact: {
+        artifactRef: artifact.artifactRef,
+        mimeType: artifact.mimeType,
+        sizeBytes: artifact.sizeBytes,
+        checksumSha256: artifact.checksumSha256,
+      },
+    },
+    context.signal,
+  );
+  await context.recordOutputAuthorization(intent.writeIntentId);
+
   const stored = await context.storage.writeDelegatedOutput(
     {
       executionId: context.executionId,
       attemptId: context.attemptId,
-      writeIntentId,
-      writeAuthorityRef,
+      writeIntentId: intent.writeIntentId,
+      writeAuthorityRef: intent.uploadCompletionToken,
       artifact,
     },
     context.signal,
