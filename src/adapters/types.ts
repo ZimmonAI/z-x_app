@@ -8,6 +8,7 @@ import type {
 import type {
   CapacitySnapshotV1,
   FixtureScenario,
+  PreparedExecutionInputV1,
   RouteSnapshotV1,
   StorageResultV1,
 } from '../contracts/v1/dependencies.js';
@@ -93,6 +94,66 @@ export function requiredScalarString(request: ExecutionRequestV1, key: string): 
     });
   }
   return value;
+}
+
+export async function consumeFrozenExactObject(
+  context: Pick<AdapterContext, 'request' | 'storage' | 'executionId' | 'attemptId' | 'signal'>,
+  input: Readonly<{
+    resourceId: string;
+    resourceVersionId?: string;
+    storageObjectId?: string;
+    kind: string;
+    role?: string;
+    readGrantRef?: string;
+  }>,
+): Promise<PreparedExecutionInputV1> {
+  if (!input.storageObjectId || !input.readGrantRef) {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_EXACT_INPUT_AUTHORITY_REQUIRED',
+      message: 'the exact input object and bounded read authority are required',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
+  if (context.storage.readExactObject === undefined) {
+    throw new SafeExecutionError({
+      family: 'adapter-unavailable',
+      code: 'ZX_Z_S_EXACT_INPUT_READER_UNAVAILABLE',
+      message: 'the governed Z-s exact-object input reader is unavailable',
+      retryable: true,
+      traceId: context.request.traceId,
+    });
+  }
+  const exact = await context.storage.readExactObject(
+    {
+      executionId: context.executionId,
+      attemptId: context.attemptId,
+      storageObjectId: input.storageObjectId,
+      readAuthorityRef: input.readGrantRef,
+    },
+    context.signal,
+  );
+  if (exact.storageObjectId !== input.storageObjectId) {
+    throw new SafeExecutionError({
+      family: 'storage-input-failure',
+      code: 'ZX_Z_S_INPUT_IDENTITY_CHANGED',
+      message: 'the exact Z-s input identity changed during delegated read',
+      retryable: false,
+      traceId: context.request.traceId,
+    });
+  }
+  return Object.freeze({
+    resourceId: input.resourceId,
+    ...(input.resourceVersionId === undefined ? {} : { resourceVersionId: input.resourceVersionId }),
+    storageObjectId: exact.storageObjectId,
+    kind: input.kind,
+    ...(input.role === undefined ? {} : { role: input.role }),
+    mimeType: exact.mimeType,
+    sizeBytes: exact.sizeBytes,
+    checksumSha256: exact.checksumSha256,
+    body: exact.body,
+  });
 }
 
 export async function consumeDelegatedExactObject(
@@ -200,12 +261,17 @@ export function ownerCorrelatedDelegatedStorageResult(
   };
 }
 
-async function runProvider(context: AdapterContext, scenario: FixtureScenario | undefined) {
+async function runProvider(
+  context: AdapterContext,
+  scenario: FixtureScenario | undefined,
+  preparedInputs: readonly PreparedExecutionInputV1[] = [],
+) {
   const started = await context.autoHub.startRun(
     {
       operation: context.request.operationType,
       adapterId: context.route.adapterId,
       runtimeBindingRef: context.capacity.runtimeBindingRef,
+      ...(preparedInputs.length === 0 ? {} : { preparedInputs }),
       fixtureScenario: scenario,
     },
     context.signal,
@@ -262,6 +328,7 @@ async function runProvider(context: AdapterContext, scenario: FixtureScenario | 
 async function directOwnerAuthorizedHandoff(
   context: AdapterContext,
   kind: 'image' | 'video',
+  preparedInputs: readonly PreparedExecutionInputV1[] = [],
 ): Promise<AdapterOutput> {
   const ownerStorageAccess = context.request.ownerStorageAccess;
   if (!ownerStorageAccess) {
@@ -313,7 +380,7 @@ async function directOwnerAuthorizedHandoff(
     });
   }
 
-  const run = await runProvider(context, undefined);
+  const run = await runProvider(context, undefined, preparedInputs);
   await context.recordProviderOutput({ externalRunRef: run.runRef });
 
   const scope = {
@@ -376,10 +443,11 @@ async function directOwnerAuthorizedHandoff(
 export async function dispatchAndStoreMedia(
   context: AdapterContext,
   kind: 'image' | 'video',
+  preparedInputs: readonly PreparedExecutionInputV1[] = [],
 ): Promise<AdapterOutput> {
   const scenario = fixtureScenario(context.request);
   if (scenario === undefined) {
-    return directOwnerAuthorizedHandoff(context, kind);
+    return directOwnerAuthorizedHandoff(context, kind, preparedInputs);
   }
 
   const storageOutput = context.request.storageOutput;
