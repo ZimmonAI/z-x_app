@@ -1,4 +1,6 @@
 import type {
+  DelegatedOutputIntentV1,
+  DelegatedOutputIntentResultV1,
   DelegatedOutputWriteV1,
   DelegatedStorageResultV1,
 } from './z-s.js';
@@ -217,6 +219,36 @@ function positiveNumber(value: unknown, label: string): number {
   return value;
 }
 
+function parseDelegatedIntentResult(
+  value: unknown,
+): DelegatedOutputIntentResultV1 {
+  const envelope = record(value, 'Z-s delegated write-intent response');
+  const result = record(envelope.result, 'Z-s delegated write-intent result');
+  const { uploadCompletionToken: rawUploadCompletionToken, ...safeResult } = result;
+  rejectProviderPrivateFields({ ...envelope, result: safeResult });
+
+  const writeIntentId = requiredTechnicalId(result.writeIntentId, 'writeIntentId');
+  const storageObjectId = requiredTechnicalId(result.storageObjectId, 'storageObjectId');
+  const uploadCompletionToken = requiredString(
+    rawUploadCompletionToken,
+    'uploadCompletionToken',
+    4096,
+  );
+  const expiresAt = requiredString(result.expiresAt, 'expiresAt', 64);
+  if (!Number.isFinite(Date.parse(expiresAt))) throw new Error('expiresAt is invalid');
+  const state = requiredString(result.state, 'state', 32);
+  if (state !== 'accepted' && state !== 'recorded') {
+    throw new Error('write-intent state is invalid');
+  }
+
+  return Object.freeze({
+    writeIntentId,
+    storageObjectId,
+    uploadCompletionToken,
+    expiresAt,
+  });
+}
+
 function parseDelegatedResult(
   value: unknown,
   input: DelegatedOutputWriteV1,
@@ -345,11 +377,11 @@ function authority(value: string): string {
   return requiredString(value, 'delegated write authority', 4096);
 }
 
-function operationReference(input: DelegatedOutputWriteV1): string {
+function operationReference(input: Readonly<{ executionId: string; attemptId: string }>): string {
   const executionId = requiredTechnicalId(input.executionId, 'executionId');
   const attemptId = requiredTechnicalId(input.attemptId, 'attemptId');
   const reference = `zx-output-write:${executionId}:${attemptId}`;
-  if (reference.length > 128) throw new Error('delegated output correlation is too long');
+  if (reference.length > 120) throw new Error('delegated output correlation is too long');
   return reference;
 }
 
@@ -372,6 +404,98 @@ export class ZStorageDelegatedOutputHttpClient extends ZStorageHttpClient {
       this.#requestTimeoutMs > MAX_REQUEST_TIMEOUT_MS
     ) {
       throw new Error('Z-s request timeout is invalid');
+    }
+  }
+
+  async createDelegatedOutputWriteIntent(
+    input: DelegatedOutputIntentV1,
+    callerSignal: AbortSignal,
+  ): Promise<DelegatedOutputIntentResultV1> {
+    const writeAuthorizationRef = authority(input.writeAuthorizationRef);
+    const mimeType = requiredString(input.artifact.mimeType, 'artifact mimeType', 160);
+    if (!MIME_TYPE.test(mimeType)) throw new Error('artifact mimeType is invalid');
+    if (!SHA256.test(input.artifact.checksumSha256)) throw new Error('artifact checksum is invalid');
+    if (!Number.isSafeInteger(input.artifact.sizeBytes) || input.artifact.sizeBytes <= 0) {
+      throw new Error('artifact size is invalid');
+    }
+    requiredString(input.artifact.artifactRef, 'artifactRef', 512);
+    const correlation = operationReference(input);
+    const timeoutController = new AbortController();
+    const requestSignal = AbortSignal.any([callerSignal, timeoutController.signal]);
+    const timeout = setTimeout(() => timeoutController.abort(), this.#requestTimeoutMs);
+
+    try {
+      let response: Response;
+      try {
+        response = await this.#fetchImpl(
+          `${this.#baseUrl}/v1/object-write-intents`,
+          {
+            method: 'POST',
+            redirect: 'error',
+            credentials: 'omit',
+            headers: {
+              authorization: `Bearer ${this.#bearerToken}`,
+              'x-zs-write-authorization-token': writeAuthorizationRef,
+              'x-zs-caller-app': 'z-x_app',
+              'x-zs-contract-version': '1.0',
+              'x-app-correlation-reference': correlation,
+              'idempotency-key': `${correlation}:intent`,
+              'content-type': 'application/json',
+              accept: 'application/json',
+            },
+            body: JSON.stringify({
+              mediaType: mimeType,
+              byteLength: input.artifact.sizeBytes,
+              checksumSha256: input.artifact.checksumSha256,
+            }),
+            signal: requestSignal,
+          },
+        );
+      } catch (error) {
+        if (callerSignal.aborted) throw callerSignal.reason ?? error;
+        if (timeoutController.signal.aborted) {
+          throw safeFailure(
+            'timeout',
+            'ZX_Z_S_DELEGATED_INTENT_TIMEOUT',
+            'the delegated Z-s write-intent request timed out',
+            true,
+            correlation,
+          );
+        }
+        if (error instanceof SafeExecutionError) throw error;
+        throw safeFailure(
+          'storage-output-failure',
+          'ZX_Z_S_DELEGATED_INTENT_REQUEST_FAILED',
+          'the delegated Z-s write-intent request failed safely',
+          true,
+          correlation,
+        );
+      }
+
+      if (!response.ok) throw mapHttpFailure(response.status, correlation);
+      if (response.status !== 200) {
+        throw safeFailure(
+          'storage-output-failure',
+          'ZX_Z_S_DELEGATED_INTENT_RESPONSE_INVALID',
+          'the delegated Z-s write-intent response was invalid',
+          true,
+          correlation,
+        );
+      }
+      try {
+        return parseDelegatedIntentResult(await readBoundedJson(response, requestSignal));
+      } catch (error) {
+        if (error instanceof SafeExecutionError) throw error;
+        throw safeFailure(
+          'malformed-output',
+          'ZX_Z_S_DELEGATED_INTENT_MALFORMED_RESPONSE',
+          'the delegated Z-s write-intent response was malformed',
+          true,
+          correlation,
+        );
+      }
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
