@@ -10,6 +10,7 @@ function ownerRequest() {
     idempotencyKey: 'action-1',
     requestFingerprint: 'b'.repeat(64),
     operationType: 'image.generate.v1',
+    executionMethodRef: 'vm-method:image.generate:variant-1',
     frozenInputResources: [
       {
         resourceId: 'vm-resource-1',
