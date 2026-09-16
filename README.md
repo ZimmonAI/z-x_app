@@ -4,7 +4,7 @@ Fixture-first source foundation for the governed `zx.execution.v1` contract. It 
 
 ## Source-only setup
 
-Use Node.js 22 and npm. Validation uses five in-process `fixture-v1` dependency clients plus an ephemeral PostgreSQL database supplied as `ZX_TEST_DATABASE_URL`.
+Use Node.js 24 and npm. Validation uses five in-process `fixture-v1` dependency clients plus an ephemeral PostgreSQL database supplied as `ZX_TEST_DATABASE_URL`.
 
 ```bash
 npm ci
@@ -17,7 +17,7 @@ The source now defines three disabled, unresolved runtimes: `z-x-fixture-auth`, 
 
 `z-x-fixture-auth` is a private test authority owned by `@zimspace/z-x-execution-runner`; it is not a production identity provider. It serves only `GET /internal/health` and the public ES256 JWKS at `GET /.well-known/jwks.json`. It fails closed unless the exact fixture issuer `urn:zimspace:z-x:fixture-auth`, audience `z-x-execution-runner`, 300-second token limit, key ID, private JWK, and matching public JWKS are supplied through the nine `ZX_FIXTURE_AUTH_*` variables listed in `.env.example`.
 
-The Node-built-in provisioning utility writes key material only to the caller-provided file and never prints private key content. Node.js 22 defines its own `--env-file` option, so the `--` delimiter is required to pass the fixture provisioner's `--env-file` argument through to the script. Use this exact loopback-only command after an authorized env path and registered port exist:
+The Node-built-in provisioning utility writes key material only to the caller-provided file and never prints private key content. Node.js 24 defines its own `--env-file` option, so the `--` delimiter is required to pass the fixture provisioner's `--env-file` argument through to the script. Use this exact loopback-only command after an authorized env path and registered port exist:
 
 ```text
 node -- scripts/provision-fixture-auth.mjs --env-file <exact-path> --port <registered-port> --bind-host 127.0.0.1

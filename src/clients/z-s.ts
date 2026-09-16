@@ -35,6 +35,20 @@ export interface DelegatedOutputArtifactV1 {
   body: ReadableStream<Uint8Array>;
 }
 
+export interface DelegatedOutputIntentV1 {
+  executionId: string;
+  attemptId: string;
+  writeAuthorizationRef: string;
+  artifact: Readonly<Omit<DelegatedOutputArtifactV1, 'body'>>;
+}
+
+export interface DelegatedOutputIntentResultV1 {
+  writeIntentId: string;
+  storageObjectId: string;
+  uploadCompletionToken: string;
+  expiresAt: string;
+}
+
 export interface DelegatedOutputWriteV1 {
   executionId: string;
   attemptId: string;
@@ -80,6 +94,10 @@ export interface ZStorageClient {
    * implementation is the delegated Z-s write-intent client and fixtures implement it
    * deterministically so storage-only reconciliation never has an optional-method race.
    */
+  createDelegatedOutputWriteIntent(
+    input: DelegatedOutputIntentV1,
+    signal: AbortSignal,
+  ): Promise<DelegatedOutputIntentResultV1>;
   writeDelegatedOutput(
     input: DelegatedOutputWriteV1,
     signal: AbortSignal,
@@ -92,6 +110,10 @@ export interface ZStorageClient {
 // the actual delegated-write implementation remains owned by ZStorageDelegatedOutputHttpClient.
 declare module './z-s-http.js' {
   interface ZStorageHttpClient {
+    createDelegatedOutputWriteIntent(
+      input: DelegatedOutputIntentV1,
+      signal: AbortSignal,
+    ): Promise<DelegatedOutputIntentResultV1>;
     writeDelegatedOutput(
       input: DelegatedOutputWriteV1,
       signal: AbortSignal,

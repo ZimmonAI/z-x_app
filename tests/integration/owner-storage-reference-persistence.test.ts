@@ -14,6 +14,7 @@ describe('owner storage reference persistence', () => {
     expect(reconciliation).toContain('a.safe_provider_output_ref is not null');
     expect(reconciliation).toContain('attemptId: claim.attemptId');
     expect(reconciliation).not.toContain('createOutputAuthorization(');
+    expect(reconciliation).toContain('createDelegatedOutputWriteIntent(');
   });
 
   it('keeps the owner-storage migration history additive', async () => {
