@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import type { ZStorageClient } from '../../src/clients/z-s.js';
+import type {
+  DelegatedOutputWriteV1,
+  DelegatedStorageResultV1,
+  ZStorageClient,
+} from '../../src/clients/z-s.js';
 import type {
   CreateOutputAuthorizationV1,
   CompleteOutputV1,
@@ -127,6 +131,25 @@ export class ZStorageFixtureV1 implements ZStorageClient {
     return {
       readGrantRef: `read_${input.resourceId}`,
       expiresAt: new Date(60000).toISOString(),
+    };
+  }
+
+  async writeDelegatedOutput(
+    input: DelegatedOutputWriteV1,
+    _signal: AbortSignal,
+  ): Promise<DelegatedStorageResultV1> {
+    const video = input.artifact.mimeType.startsWith('video/');
+    return {
+      storageObjectId: `zs_object_${input.writeIntentId}`,
+      writeIntentId: input.writeIntentId,
+      checksumSha256: input.artifact.checksumSha256,
+      mimeType: input.artifact.mimeType,
+      sizeBytes: input.artifact.sizeBytes,
+      width: 1024,
+      height: 1024,
+      ...(video ? { durationSeconds: 5 } : {}),
+      objectProtectionStage: 'protected',
+      storageState: 'ready',
     };
   }
 }

@@ -19,7 +19,9 @@ function ownerRequest() {
         readGrantRef: 'zs_read_grant_1',
       },
     ],
-    safeScalarInputs: {},
+    safeScalarInputs: {
+      zSOutputWriteIntentId: '019a55c1-7ad0-7000-8000-000000000001',
+    },
     routeLocks: {},
     requestedOutputType: 'image/png',
     ownerStorageAccess: {
@@ -34,9 +36,10 @@ function ownerRequest() {
 }
 
 describe('owner-issued storage flow', () => {
-  it('persists the owner-issued reference and fails before provider dispatch', async () => {
+  it('requires recoverable temporary-artifact support before provider dispatch', async () => {
     const startRun = vi.fn();
     const createOutputAuthorization = vi.fn();
+    const writeDelegatedOutput = vi.fn();
     const recordOutputAuthorization = vi.fn(async () => undefined);
 
     await expect(
@@ -82,6 +85,7 @@ describe('owner-issued storage flow', () => {
             completeOrIngestOutput: vi.fn(),
             reconcileOutput: vi.fn(),
             createReadGrant: vi.fn(),
+            writeDelegatedOutput,
           },
           recordProviderOutput: vi.fn(),
           recordOutputAuthorization,
@@ -90,13 +94,14 @@ describe('owner-issued storage flow', () => {
       ),
     ).rejects.toMatchObject({
       safe: expect.objectContaining({
-        code: 'ZX_Z_S_DELEGATED_OUTPUT_NOT_READY',
+        code: 'ZX_TEMP_ARTIFACT_RUNTIME_REQUIRED',
         retryable: true,
       }),
     });
 
-    expect(recordOutputAuthorization).toHaveBeenCalledWith('zs_write_grant_1');
     expect(startRun).not.toHaveBeenCalled();
+    expect(writeDelegatedOutput).not.toHaveBeenCalled();
+    expect(recordOutputAuthorization).not.toHaveBeenCalled();
     expect(createOutputAuthorization).not.toHaveBeenCalled();
   });
 });

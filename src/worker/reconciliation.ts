@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
-import { fixtureScenario } from '../adapters/types.js';
+import {
+  delegatedOutputWriteAuthority,
+  fixtureScenario,
+  ownerCorrelatedDelegatedStorageResult,
+} from '../adapters/types.js';
 import type {
   CapacitySnapshotV1,
   OutputReconciliationV1,
@@ -10,7 +14,11 @@ import type {
 import { parseOutputReconciliationV1 } from '../contracts/v1/dependencies.js';
 import { SafeExecutionError, type SafeErrorV1 } from '../contracts/v1/error.js';
 import type { ExecutionRequestV1 } from '../contracts/v1/execution.js';
-import { ExecutionResultV1Schema, type ExecutionResultV1 } from '../contracts/v1/result.js';
+import {
+  ExecutionResultV1Schema,
+  type ExecutionResultV1,
+  type OwnerCorrelatedStorageOutputV1,
+} from '../contracts/v1/result.js';
 import { withTransaction } from '../persistence/transaction.js';
 import { validateGeneratedMedia } from '../validation/output.js';
 import { validateExecutionRequest } from '../validation/request.js';
@@ -53,9 +61,9 @@ function toSafeError(error: unknown, traceId: string): SafeErrorV1 {
   };
 }
 
-function storageLookupError(error: unknown): { code: string; retryable: true } {
+function storageLookupError(error: unknown): { code: string; retryable: boolean } {
   if (error instanceof SafeExecutionError) {
-    return { code: error.safe.code, retryable: true };
+    return { code: error.safe.code, retryable: error.safe.retryable };
   }
   return { code: 'ZX_STORAGE_RECONCILIATION_LOOKUP_FAILED', retryable: true };
 }
@@ -142,7 +150,7 @@ async function claimStorageCompletion(
            on c.execution_id=e.id and c.attempt_id=a.id
         where e.status='reconciliation-required'
           and a.status='reconciliation-required'
-          and c.case_type in ('lost-result','storage-completion')
+          and c.case_type in ('lost-result','storage-completion','lease-loss')
           and c.status in ('open','resolving')
           and c.next_check_at<=now()
           and a.output_authorization_ref is not null
@@ -211,9 +219,13 @@ function validateReconciledStorageResult(
 
 function buildExecutionResult(
   claim: StorageCompletionClaim,
-  storageResult: StorageResultV1,
+  storageResult: StorageResultV1 | OwnerCorrelatedStorageOutputV1,
 ): ExecutionResultV1 {
   const completedAt = new Date().toISOString();
+  const output =
+    'pendingResourceId' in storageResult
+      ? storageResult
+      : validateReconciledStorageResult(claim.request.requestedOutputType, storageResult);
   return ExecutionResultV1Schema.parse({
     contractVersion: 'zx.execution.v1',
     executionId: claim.executionId,
@@ -223,7 +235,7 @@ function buildExecutionResult(
     runtimeBindingRef: claim.capacity.runtimeBindingRef,
     adapterId: claim.route.adapterId,
     adapterVersion: claim.route.adapterVersion,
-    outputs: [validateReconciledStorageResult(claim.request.requestedOutputType, storageResult)],
+    outputs: [output],
     provenance: {
       routeId: claim.route.routeId,
       routeVersion: claim.route.routeVersion,
@@ -484,6 +496,116 @@ async function finalizeTerminalStorageFailure(
   });
 }
 
+async function reconcileFixtureStorage(
+  pool: pg.Pool,
+  claim: StorageCompletionClaim,
+  workerId: string,
+  leaseSeconds: number,
+  dependencies: FixtureDependencies,
+  signal: AbortSignal,
+): Promise<void> {
+  const reconciliation: OutputReconciliationV1 = parseOutputReconciliationV1(
+    await dependencies.storage.reconcileOutput(
+      {
+        executionId: claim.executionId,
+        attemptId: claim.attemptId,
+        authorizationRef: claim.authorizationRef,
+        safeProviderOutputRef: claim.safeProviderOutputRef,
+        mimeType: claim.request.requestedOutputType,
+        fixtureScenario: fixtureScenario(claim.request),
+      },
+      signal,
+    ),
+  );
+
+  if (reconciliation.status === 'completed') {
+    await finalizeCompletedStorageResult(
+      pool,
+      claim,
+      buildExecutionResult(claim, reconciliation.result),
+      workerId,
+    );
+    return;
+  }
+  if (reconciliation.status === 'pending') {
+    await reopenStorageCase(
+      pool,
+      claim,
+      reconciliation.retryAfterSeconds,
+      'storage-output-pending',
+      { retryAfterSeconds: reconciliation.retryAfterSeconds },
+    );
+    return;
+  }
+  if (reconciliation.retryable) {
+    await reopenStorageCase(pool, claim, boundedSeconds(leaseSeconds, 30), 'storage-output-failure', {
+      code: reconciliation.errorCode,
+      retryable: true,
+    });
+    return;
+  }
+  await finalizeTerminalStorageFailure(pool, claim, reconciliation.errorCode, workerId);
+}
+
+async function reconcileDelegatedStorage(
+  pool: pg.Pool,
+  claim: StorageCompletionClaim,
+  workerId: string,
+  dependencies: FixtureDependencies,
+  signal: AbortSignal,
+): Promise<void> {
+  const temporaryArtifacts = dependencies.temporaryArtifacts;
+  if (!temporaryArtifacts) {
+    throw new SafeExecutionError({
+      family: 'storage-output-failure',
+      code: 'ZX_TEMP_ARTIFACT_RUNTIME_REQUIRED',
+      message: 'temporary artifact recovery is unavailable',
+      retryable: true,
+      traceId: claim.request.traceId,
+    });
+  }
+  const authority = delegatedOutputWriteAuthority(claim.request);
+  const artifact = await temporaryArtifacts.open(
+    {
+      ownerApp: claim.request.ownerApp,
+      ...(claim.request.ownerProjectId === undefined
+        ? {}
+        : { ownerProjectId: claim.request.ownerProjectId }),
+      executionId: claim.executionId,
+      attemptId: claim.attemptId,
+      artifactRef: claim.safeProviderOutputRef,
+    },
+    signal,
+  );
+  const stored = await dependencies.storage.writeDelegatedOutput(
+    {
+      executionId: claim.executionId,
+      attemptId: claim.attemptId,
+      writeIntentId: claim.authorizationRef,
+      writeAuthorityRef: authority,
+      artifact,
+    },
+    signal,
+  );
+  const kind = claim.request.ownerStorageAccess?.artifactKind;
+  if (kind !== 'image' && kind !== 'video') {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_OWNER_STORAGE_ACCESS_REQUIRED',
+      message: 'owner storage output shape is missing during reconciliation',
+      retryable: false,
+      traceId: claim.request.traceId,
+    });
+  }
+  const output = ownerCorrelatedDelegatedStorageResult(claim.request, stored, kind);
+  await finalizeCompletedStorageResult(
+    pool,
+    claim,
+    buildExecutionResult(claim, output),
+    workerId,
+  );
+}
+
 export async function reconcileNextStorageCompletion(
   pool: pg.Pool,
   workerId: string,
@@ -495,52 +617,25 @@ export async function reconcileNextStorageCompletion(
   if (!claim) return false;
 
   try {
-    const reconciliation: OutputReconciliationV1 = parseOutputReconciliationV1(
-      await dependencies.storage.reconcileOutput(
-        {
-          executionId: claim.executionId,
-          attemptId: claim.attemptId,
-          authorizationRef: claim.authorizationRef,
-          safeProviderOutputRef: claim.safeProviderOutputRef,
-          mimeType: claim.request.requestedOutputType,
-          fixtureScenario: fixtureScenario(claim.request),
-        },
-        signal,
-      ),
-    );
-
-    if (reconciliation.status === 'completed') {
-      await finalizeCompletedStorageResult(
-        pool,
-        claim,
-        buildExecutionResult(claim, reconciliation.result),
-        workerId,
-      );
-      return true;
+    if (fixtureScenario(claim.request) === undefined) {
+      await reconcileDelegatedStorage(pool, claim, workerId, dependencies, signal);
+    } else {
+      await reconcileFixtureStorage(pool, claim, workerId, leaseSeconds, dependencies, signal);
     }
-    if (reconciliation.status === 'pending') {
-      await reopenStorageCase(
-        pool,
-        claim,
-        reconciliation.retryAfterSeconds,
-        'storage-output-pending',
-        { retryAfterSeconds: reconciliation.retryAfterSeconds },
-      );
-      return true;
-    }
-    if (reconciliation.retryable) {
-      await reopenStorageCase(pool, claim, boundedSeconds(leaseSeconds, 30), 'storage-output-failure', {
-        code: reconciliation.errorCode,
-        retryable: true,
-      });
-      return true;
-    }
-
-    await finalizeTerminalStorageFailure(pool, claim, reconciliation.errorCode, workerId);
     return true;
   } catch (error) {
     const failure = storageLookupError(error);
-    await reopenStorageCase(pool, claim, boundedSeconds(leaseSeconds, 30), 'storage-output-failure', failure);
+    if (failure.retryable) {
+      await reopenStorageCase(
+        pool,
+        claim,
+        boundedSeconds(leaseSeconds, 30),
+        'storage-output-failure',
+        failure,
+      );
+    } else {
+      await finalizeTerminalStorageFailure(pool, claim, failure.code, workerId);
+    }
     return true;
   }
 }
