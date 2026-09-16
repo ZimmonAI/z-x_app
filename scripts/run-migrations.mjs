@@ -21,6 +21,11 @@ try {
   for (const migration of ordered) {
     const path = direction === 'up' ? migration.up : migration.down;
     await client.query(await fs.readFile(path, 'utf8'));
+    if (direction === 'down' && migration.destructive === true) {
+      // A destructive cleanup is an intentional rollback boundary. Do not cross it
+      // and resurrect the rejected historical runtime model.
+      break;
+    }
   }
 } finally {
   await client.end();

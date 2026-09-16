@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
+import type { FastifyInstance } from 'fastify';
 import { validateExecutionRequest } from '../../validation/request.js';
 import { withTransaction } from '../../persistence/transaction.js';
 import type { AuthVerifier, Principal } from '../auth.js';
 import { authenticate, requireScope } from '../auth.js';
-import type { FastifyInstance } from 'fastify';
 
 export interface ExecutionRecord {
   id: string;
@@ -161,7 +161,7 @@ async function selectRecord(
   return result.rows[0] ?? null;
 }
 
-async function appendDatabaseTransition(
+async function appendTransition(
   client: pg.PoolClient,
   input: {
     executionId: string;
@@ -171,14 +171,13 @@ async function appendDatabaseTransition(
     reasonFamily: string;
     actorRef: string;
     traceId: string;
-    safeMetadata?: Record<string, unknown>;
   },
 ): Promise<void> {
   await client.query(
     `insert into execution.execution_status_transitions
       (event_key, execution_id, attempt_id, from_status, to_status,
        reason_family, actor_type, actor_ref, trace_id, safe_metadata)
-     values ($1,$2,$3,$4,$5,$6,'api',$7,$8,$9)`,
+     values ($1,$2,$3,$4,$5,$6,'api',$7,$8,'{}'::jsonb)`,
     [
       randomUUID(),
       input.executionId,
@@ -188,7 +187,6 @@ async function appendDatabaseTransition(
       input.reasonFamily,
       input.actorRef,
       input.traceId,
-      input.safeMetadata ?? {},
     ],
   );
 }
@@ -202,10 +200,7 @@ export class PostgresExecutionService implements ExecutionService {
       throw Object.assign(new Error('owner mismatch'), { statusCode: 403 });
     }
     return withTransaction(this.pool, async (client) => {
-      const existing = await client.query<{
-        id: string;
-        request_fingerprint: string;
-      }>(
+      const existing = await client.query<{ id: string; request_fingerprint: string }>(
         `select e.id, r.request_fingerprint
            from execution.execution_requests r
            join execution.executions e on e.request_id=r.id
@@ -215,9 +210,7 @@ export class PostgresExecutionService implements ExecutionService {
       );
       const duplicate = existing.rows[0];
       if (duplicate) {
-        if (duplicate.request_fingerprint !== request.requestFingerprint) {
-          conflict('idempotency conflict');
-        }
+        if (duplicate.request_fingerprint !== request.requestFingerprint) conflict('idempotency conflict');
         const record = await selectRecord(client, owner, duplicate.id);
         if (!record) throw new Error('duplicate execution record is missing');
         return { code: 200 as const, record: mapDatabaseRecord(record) };
@@ -228,9 +221,8 @@ export class PostgresExecutionService implements ExecutionService {
       await client.query(
         `insert into execution.execution_requests
           (id, contract_version, owner_app, owner_action_id, owner_project_id,
-           idempotency_key, request_fingerprint, operation_type,
-           request_envelope, trace_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+           idempotency_key, request_fingerprint, request_envelope, trace_id)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [
           requestId,
           request.contractVersion,
@@ -239,7 +231,6 @@ export class PostgresExecutionService implements ExecutionService {
           request.ownerProjectId ?? null,
           request.idempotencyKey,
           request.requestFingerprint,
-          request.operationType,
           request,
           request.traceId,
         ],
@@ -256,14 +247,13 @@ export class PostgresExecutionService implements ExecutionService {
           request.retryPolicy.maxAttempts,
         ],
       );
-      await appendDatabaseTransition(client, {
+      await appendTransition(client, {
         executionId,
         fromStatus: null,
         toStatus: 'accepted',
         reasonFamily: 'request-accepted',
         actorRef: owner,
         traceId: request.traceId,
-        safeMetadata: { ownerActionId: request.ownerActionId },
       });
       const record = await selectRecord(client, owner, executionId);
       if (!record) throw new Error('created execution record is missing');
@@ -281,12 +271,8 @@ export class PostgresExecutionService implements ExecutionService {
       const record = await selectRecord(client, owner, id, true);
       if (!record) return null;
       if (record.cancellation_requested_at || ['succeeded', 'cancelled'].includes(record.status)) {
-        return {
-          code: 200,
-          record: { ...mapDatabaseRecord(record), cancellationAccepted: false },
-        };
+        return { code: 200, record: { ...mapDatabaseRecord(record), cancellationAccepted: false } };
       }
-
       const terminalImmediately = !['running', 'reconciliation-required'].includes(record.status);
       await client.query(
         `update execution.executions
@@ -297,9 +283,9 @@ export class PostgresExecutionService implements ExecutionService {
           where id=$1`,
         [id, terminalImmediately],
       );
-      const request = validateExecutionRequest(record.request_envelope);
       if (terminalImmediately) {
-        await appendDatabaseTransition(client, {
+        const request = validateExecutionRequest(record.request_envelope);
+        await appendTransition(client, {
           executionId: id,
           fromStatus: record.status,
           toStatus: 'cancelled',
@@ -310,10 +296,7 @@ export class PostgresExecutionService implements ExecutionService {
       }
       const updated = await selectRecord(client, owner, id);
       if (!updated) throw new Error('cancelled execution record is missing');
-      return {
-        code: 202,
-        record: { ...mapDatabaseRecord(updated), cancellationAccepted: true },
-      };
+      return { code: 202, record: { ...mapDatabaseRecord(updated), cancellationAccepted: true } };
     });
   }
 
@@ -333,14 +316,9 @@ export class PostgresExecutionService implements ExecutionService {
         [id],
       );
       const row = policy.rows[0];
-      if (
-        !row ||
-        !['failed', 'timed-out'].includes(record.status) ||
-        row.current_attempt_number >= row.max_attempts
-      ) {
+      if (!row || !['failed', 'timed-out'].includes(record.status) || row.current_attempt_number >= row.max_attempts) {
         conflict('retry conflict');
       }
-
       const nextAttempt = row.current_attempt_number + 1;
       const attemptId = randomUUID();
       await client.query(
@@ -350,21 +328,13 @@ export class PostgresExecutionService implements ExecutionService {
         [attemptId, id, nextAttempt],
       );
       await client.query(
-        `insert into execution.execution_reconciliation_cases
-          (id, execution_id, attempt_id, case_type, status, reason_family,
-           safe_details, detected_at, next_check_at)
-         values ($1,$2,$3,'manual-retry','open','manual-retry',$4,now(),now())`,
-        [randomUUID(), id, attemptId, { priorStatus: record.status }],
-      );
-      await client.query(
         `update execution.executions
-            set status='queued', current_attempt_number=$2,
-                error_envelope=null, terminal_at=null,
-                lock_version=lock_version+1, updated_at=now()
+            set status='queued', current_attempt_number=$2, error_envelope=null,
+                terminal_at=null, lock_version=lock_version+1, updated_at=now()
           where id=$1`,
         [id, nextAttempt],
       );
-      await appendDatabaseTransition(client, {
+      await appendTransition(client, {
         executionId: id,
         attemptId,
         fromStatus: record.status,
@@ -372,7 +342,6 @@ export class PostgresExecutionService implements ExecutionService {
         reasonFamily: 'manual-retry',
         actorRef: owner,
         traceId: row.trace_id,
-        safeMetadata: { attemptNumber: nextAttempt },
       });
       const updated = await selectRecord(client, owner, id);
       if (!updated) throw new Error('retried execution record is missing');
@@ -384,55 +353,29 @@ export class PostgresExecutionService implements ExecutionService {
     return withTransaction(this.pool, async (client) => {
       const record = await selectRecord(client, owner, id, true);
       if (!record) return null;
-      const evidence = await client.query<{
-        attempt_id: string | null;
-        external_run_ref: string | null;
-        safe_provider_output_ref: string | null;
-        trace_id: string;
-        open_case_id: string | null;
-      }>(
-        `select a.id as attempt_id, a.external_run_ref, a.safe_provider_output_ref,
-                r.trace_id,
-                (select c.id from execution.execution_reconciliation_cases c
-                  where c.execution_id=e.id and c.status in ('open','resolving')
-                  order by c.detected_at asc limit 1) as open_case_id
+      if (record.reconciliation_open) return { code: 200, record: mapDatabaseRecord(record) };
+      if (!['running', 'failed', 'timed-out', 'reconciliation-required'].includes(record.status)) {
+        conflict('no reconciliable evidence');
+      }
+      const latestAttempt = await client.query<{ id: string | null; trace_id: string }>(
+        `select a.id, r.trace_id
            from execution.executions e
            join execution.execution_requests r on r.id=e.request_id
            left join lateral (
-             select id, external_run_ref, safe_provider_output_ref
-               from execution.execution_attempts
+             select id from execution.execution_attempts
               where execution_id=e.id order by attempt_number desc limit 1
            ) a on true
           where e.id=$1`,
         [id],
       );
-      const row = evidence.rows[0];
+      const row = latestAttempt.rows[0];
       if (!row) conflict('no reconciliable evidence');
-      if (row.open_case_id) {
-        return { code: 200, record: mapDatabaseRecord(record) };
-      }
-      if (
-        !['running', 'failed', 'timed-out', 'reconciliation-required'].includes(record.status) &&
-        !row.external_run_ref &&
-        !row.safe_provider_output_ref
-      ) {
-        conflict('no reconciliable evidence');
-      }
-
       await client.query(
         `insert into execution.execution_reconciliation_cases
           (id, execution_id, attempt_id, case_type, status, reason_family,
            safe_details, detected_at, next_check_at)
-         values ($1,$2,$3,'operator-request','open','reconciliation-required',$4,now(),now())`,
-        [
-          randomUUID(),
-          id,
-          row.attempt_id,
-          {
-            externalRunKnown: Boolean(row.external_run_ref),
-            safeProviderOutputKnown: Boolean(row.safe_provider_output_ref),
-          },
-        ],
+         values ($1,$2,$3,'operator-request','open','reconciliation-required','{}'::jsonb,now(),now())`,
+        [randomUUID(), id, row.id],
       );
       if (record.status === 'running') {
         await client.query(
@@ -441,9 +384,9 @@ export class PostgresExecutionService implements ExecutionService {
             where id=$1`,
           [id],
         );
-        await appendDatabaseTransition(client, {
+        await appendTransition(client, {
           executionId: id,
-          attemptId: row.attempt_id,
+          attemptId: row.id,
           fromStatus: 'running',
           toStatus: 'reconciliation-required',
           reasonFamily: 'reconciliation-required',

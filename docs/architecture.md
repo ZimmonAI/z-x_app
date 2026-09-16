@@ -1,17 +1,24 @@
-# Architecture
+# Neutral foundation architecture
 
-Z-X owns only generic execution requests, attempts, lifecycle transitions, owner delivery attempts, and reconciliation cases. Z-Provider owns route/catalog truth; z-account owns live capacity/account/session truth; Auto-Hub owns registered execution runs; Z-s owns durable storage identity; Video Maker owns business sequencing and business writes.
+This document describes the active source state after the generic runtime/storage reset cleanup.
 
-The package exposes three independent source entrypoints: a fixture-only authentication runtime, an authenticated Fastify API, and a PostgreSQL-only durable worker. The API manifest depends on `z-x-fixture-auth`; the worker remains a support runtime of `z-x-execution-runner-api`.
+## Active responsibilities
 
-The fixture authority is private and deliberately narrow. It accepts only the fixed issuer `urn:zimspace:z-x:fixture-auth`, audience `z-x-execution-runner`, algorithm `ES256`, and a matching P-256 key pair whose `kid` is the RFC 7638 public-key thumbprint. It serves only a safe health response and the public JWKS, never private key material, token content, environment values, stack traces, or a general identity-provider surface. Minting is limited to 300 seconds, owner app `z-x-deployment-canary`, and the five Z-X execution scopes.
+Z-X currently owns only generic platform foundations:
 
-Claiming uses `FOR UPDATE SKIP LOCKED`, lease-token compare-and-swap, 60-second leases, 20-second heartbeats, a 30-second recovery scan, and the existing 30-second `ShutdownController` drain. File-based worker control is only a source-owned trigger around that same drain path: `stop.request.json` starts shutdown, the request is consumed, active work drains, the pool closes, and `stop.ack.json` reports `drained` or `drain-timeout` with safe timestamps. `fixture-v1` dependency clients remain deterministic and in-process. Real clients fail closed until owner-published versioned contracts are enabled.
+- authenticated owner isolation for the internal execution API;
+- immutable owner request identity and idempotency/fingerprint handling;
+- generic execution lifecycle persistence and safe reconciliation records;
+- worker lease, heartbeat, stop-control, and shutdown primitives;
+- safe logging/observability, fixture auth, and host-neutral runtime configuration;
+- a reusable temporary-artifact primitive.
 
-## Video Maker execution persistence
+## Deliberately absent
 
-`zx.video-maker.execution.v1` is additive to the legacy `zx.execution.v1` model. The immutable request row now discriminates either a legacy operation type or a Video Maker `tool_key` and `request_mode`; the two shapes cannot overlap. The existing `executions` row remains the single current-state authority and stores the selected fixture method, one current phase pointer, next eligible phase time, immutable regeneration lineage, feedback snapshot, and one safe opaque continuation reference.
+The active source does not define a Video Maker engine, generated-media job taxonomy, tool-to-method mapping, provider/model selection contract, hard-coded submit/check/collect phases, delegated Z-s output ownership, storage connection registry, output-object registry, or generic execution-method runtime.
 
-Both supported tools register the same logical method phases: `submit`, `check-completion`, and `collect-and-store-result`. Bounded invocations are stored in `execution_phase_attempts`; `DONE` alone advances the pointer, `WAITING` and retryable failure schedule another attempt on the same phase, terminal failure and stop preserve normalized terminal truth, and uncertainty opens reconciliation. `execution_phase_evidence` is append-only and bounded to safe technical metadata. Existing status transitions and reconciliation cases remain the audit and uncertainty authorities, so the worker extends one lifecycle path rather than creating a second execution system.
+The worker executable is intentionally inert and does not claim work until the next governed task implements the exact immutable execution-method runtime.
 
-Regeneration always inserts a new request and execution. A database trigger and the API service both require the previous execution to exist, belong to the same owner, be succeeded or failed, and have a safe continuation reference. The new execution snapshots feedback and inherits only that opaque continuation reference. Requests, completed phase attempts, evidence, and succeeded or failed Video Maker terminal truth are immutable; provider credentials, browser state, cookies, raw URLs, and unrestricted provider locations are never continuation data.
+## Persistence
+
+Historical migrations remain as history. `0003_neutral_foundation_cleanup` removes the rejected active schema additions and forms a one-way rollback boundary. A source migration is not proof of live database application; live verification belongs to the governed database lane.
