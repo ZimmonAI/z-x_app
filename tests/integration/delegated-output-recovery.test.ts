@@ -5,6 +5,8 @@ import { ZProviderFixtureV1 } from '../../fixtures/v1/z-provider.js';
 import { ZStorageFixtureV1 } from '../../fixtures/v1/z-s.js';
 import { InMemoryTemporaryArtifactStore } from '../../src/artifacts/temporary.js';
 import type {
+  DelegatedOutputIntentV1,
+  DelegatedOutputIntentResultV1,
   DelegatedOutputWriteV1,
   DelegatedStorageResultV1,
 } from '../../src/clients/z-s.js';
@@ -25,12 +27,37 @@ const writeIntentId = '019a55c1-7ad0-7000-8000-000000000031';
 const artifactBytes = new TextEncoder().encode('same-owner-generated-output');
 
 class RetryOnceDelegatedStorage extends ZStorageFixtureV1 {
-  readonly writes: Array<{
-    writeIntentId: string;
+  readonly intents: Array<{
+    writeAuthorizationRef: string;
     artifactRef: string;
     checksumSha256: string;
     sizeBytes: number;
   }> = [];
+  readonly writes: Array<{
+    writeIntentId: string;
+    writeAuthorityRef: string;
+    artifactRef: string;
+    checksumSha256: string;
+    sizeBytes: number;
+  }> = [];
+
+  override async createDelegatedOutputWriteIntent(
+    input: DelegatedOutputIntentV1,
+    _signal: AbortSignal,
+  ): Promise<DelegatedOutputIntentResultV1> {
+    this.intents.push({
+      writeAuthorizationRef: input.writeAuthorizationRef,
+      artifactRef: input.artifact.artifactRef,
+      checksumSha256: input.artifact.checksumSha256,
+      sizeBytes: input.artifact.sizeBytes,
+    });
+    return {
+      writeIntentId,
+      storageObjectId: `zs_object_${writeIntentId}`,
+      uploadCompletionToken: `ephemeral_upload_${this.intents.length}`,
+      expiresAt: new Date(60_000).toISOString(),
+    };
+  }
 
   override async writeDelegatedOutput(
     input: DelegatedOutputWriteV1,
@@ -38,6 +65,7 @@ class RetryOnceDelegatedStorage extends ZStorageFixtureV1 {
   ): Promise<DelegatedStorageResultV1> {
     this.writes.push({
       writeIntentId: input.writeIntentId,
+      writeAuthorityRef: input.writeAuthorityRef,
       artifactRef: input.artifact.artifactRef,
       checksumSha256: input.artifact.checksumSha256,
       sizeBytes: input.artifact.sizeBytes,
@@ -61,7 +89,6 @@ function delegatedImageRequest() {
     idempotencyKey: 'delegated-output-recovery-1',
     safeScalarInputs: {
       prompt: 'cinematic sunrise',
-      zSOutputWriteIntentId: writeIntentId,
     },
     delegatedAuthorities: [
       {
@@ -125,6 +152,7 @@ describe('delegated output storage-only recovery', () => {
     expect(startRun).toHaveBeenCalledTimes(1);
     expect(getRun).toHaveBeenCalledTimes(1);
     expect(materializations).toBe(1);
+    expect(storage.intents).toHaveLength(1);
     expect(storage.writes).toHaveLength(1);
 
     const failedHandoff = await pool.query<{
@@ -157,13 +185,27 @@ describe('delegated output storage-only recovery', () => {
     expect(startRun).toHaveBeenCalledTimes(1);
     expect(getRun).toHaveBeenCalledTimes(1);
     expect(materializations).toBe(1);
-    expect(storage.writes).toHaveLength(2);
-    expect(storage.writes[1]).toEqual(storage.writes[0]);
-    expect(storage.writes[0]).toMatchObject({
-      writeIntentId,
+    expect(storage.intents).toHaveLength(2);
+    expect(storage.intents[1]).toEqual(storage.intents[0]);
+    expect(storage.intents[0]).toMatchObject({
+      writeAuthorizationRef: 'owner_output_write_capability_01',
       artifactRef: 'zx-temp:recovery-artifact-1',
       sizeBytes: artifactBytes.byteLength,
     });
+    expect(storage.writes).toHaveLength(2);
+    expect(storage.writes[0]).toMatchObject({
+      writeIntentId,
+      writeAuthorityRef: 'ephemeral_upload_1',
+      artifactRef: 'zx-temp:recovery-artifact-1',
+      sizeBytes: artifactBytes.byteLength,
+    });
+    expect(storage.writes[1]).toMatchObject({
+      writeIntentId,
+      writeAuthorityRef: 'ephemeral_upload_2',
+      artifactRef: 'zx-temp:recovery-artifact-1',
+      sizeBytes: artifactBytes.byteLength,
+    });
+    expect(storage.writes[1]?.checksumSha256).toBe(storage.writes[0]?.checksumSha256);
 
     const completed = await pool.query<{
       status: string;
