@@ -235,6 +235,7 @@ export async function executeFixturePath(
   const route = await dependencies.routes.resolveAndValidateRoute(
     {
       operation: request.operationType,
+      ...(request.executionMethodRef === undefined ? {} : { executionMethodRef: request.executionMethodRef }),
       routeLocks: request.routeLocks,
       fixtureScenario: scenario,
     },
@@ -455,6 +456,9 @@ export async function prepareNextExecution(
       (await dependencies.routes.resolveAndValidateRoute(
         {
           operation: claim.request.operationType,
+          ...(claim.request.executionMethodRef === undefined
+            ? {}
+            : { executionMethodRef: claim.request.executionMethodRef }),
           routeLocks: claim.request.routeLocks,
           fixtureScenario: scenario,
         },
