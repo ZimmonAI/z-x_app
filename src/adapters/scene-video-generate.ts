@@ -1,6 +1,11 @@
 import { SafeExecutionError } from '../contracts/v1/error.js';
 import type { ExecutionAdapter } from './types.js';
-import { dispatchAndStoreMedia, requiredScalarString } from './types.js';
+import {
+  consumeFrozenExactObject,
+  dispatchAndStoreMedia,
+  fixtureScenario,
+  requiredScalarString,
+} from './types.js';
 
 export const sceneVideoGenerateAdapter: ExecutionAdapter = {
   operation: 'scene_video.generate.v1',
@@ -20,6 +25,10 @@ export const sceneVideoGenerateAdapter: ExecutionAdapter = {
         traceId: context.request.traceId,
       });
     }
-    return dispatchAndStoreMedia(context, 'video');
+    if (fixtureScenario(context.request) !== undefined) {
+      return dispatchAndStoreMedia(context, 'video');
+    }
+    const preparedStartImage = await consumeFrozenExactObject(context, startImage);
+    return dispatchAndStoreMedia(context, 'video', [preparedStartImage]);
   },
 };
