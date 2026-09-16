@@ -1,5 +1,5 @@
 import type { AutoHubDispatchClient } from '../clients/auto-hub.js';
-import type { ZStorageClient } from '../clients/z-s.js';
+import type { ExactObjectReadResultV1, ZStorageClient } from '../clients/z-s.js';
 import type {
   CapacitySnapshotV1,
   FixtureScenario,
@@ -7,7 +7,11 @@ import type {
   StorageResultV1,
 } from '../contracts/v1/dependencies.js';
 import { SafeExecutionError } from '../contracts/v1/error.js';
-import type { ExecutionRequestV1, OperationType } from '../contracts/v1/execution.js';
+import {
+  getDelegatedAuthorityReference,
+  type ExecutionRequestV1,
+  type OperationType,
+} from '../contracts/v1/execution.js';
 import { validateGeneratedMedia } from '../validation/output.js';
 
 const FIXTURE_SCENARIOS = new Set<FixtureScenario>([
@@ -80,6 +84,41 @@ export function requiredScalarString(request: ExecutionRequestV1, key: string): 
     });
   }
   return value;
+}
+
+export async function consumeDelegatedExactObject(
+  context: Pick<AdapterContext, 'request' | 'storage' | 'executionId' | 'attemptId' | 'signal'>,
+  input: Readonly<{ authorityName: string; storageObjectId: string }>,
+): Promise<ExactObjectReadResultV1> {
+  const authorityRef = getDelegatedAuthorityReference(context.request, input.authorityName);
+  if (authorityRef === undefined) {
+    throw new SafeExecutionError({
+      family: 'invalid-owner-request',
+      code: 'ZX_DELEGATED_INPUT_AUTHORITY_REQUIRED',
+      message: 'the execution is missing the delegated authority for the exact input object',
+      retryable: false,
+      details: { authorityName: input.authorityName },
+      traceId: context.request.traceId,
+    });
+  }
+  if (context.storage.readExactObject === undefined) {
+    throw new SafeExecutionError({
+      family: 'adapter-unavailable',
+      code: 'ZX_Z_S_EXACT_INPUT_READER_UNAVAILABLE',
+      message: 'the governed Z-s exact-object input reader is unavailable',
+      retryable: true,
+      traceId: context.request.traceId,
+    });
+  }
+  return context.storage.readExactObject(
+    {
+      executionId: context.executionId,
+      attemptId: context.attemptId,
+      storageObjectId: input.storageObjectId,
+      readAuthorityRef: authorityRef,
+    },
+    context.signal,
+  );
 }
 
 export async function dispatchAndStoreMedia(
