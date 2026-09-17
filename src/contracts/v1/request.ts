@@ -43,8 +43,11 @@ export const RequestStateSchema = z.enum([
 ]);
 export type RequestState = z.infer<typeof RequestStateSchema>;
 
+const ResultPositionSchema = z.number().int().positive();
+
 const RegisteredObjectResultSchema = z
   .object({
+    position: ResultPositionSchema,
     zxObjectId: z.string().uuid(),
     externalObjectId: safeString.max(4096),
   })
@@ -52,6 +55,7 @@ const RegisteredObjectResultSchema = z
 
 const TemporaryObjectResultSchema = z
   .object({
+    position: ResultPositionSchema,
     zxObjectId: z.string().uuid(),
     zxTemporaryArtifactId: z.string().uuid(),
   })
@@ -70,7 +74,6 @@ export const RequestResultV1Schema = z
     clientRequestRef: safeString.max(512).optional(),
     state: RequestStateSchema,
     requestedOutputCount: z.number().int().positive(),
-    completedOutputCount: z.number().int().nonnegative(),
     outputs: z.array(RequestObjectResultSchema),
     error: z
       .object({
