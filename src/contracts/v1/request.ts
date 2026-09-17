@@ -43,28 +43,24 @@ export const RequestStateSchema = z.enum([
 ]);
 export type RequestState = z.infer<typeof RequestStateSchema>;
 
-const ResultPositionSchema = z.number().int().positive();
-
-const RegisteredObjectResultSchema = z
+export const RequestObjectResultSchema = z
   .object({
-    position: ResultPositionSchema,
+    position: z.number().int().positive(),
     zxObjectId: z.string().uuid(),
-    externalObjectId: safeString.max(4096),
+    externalObjectId: safeString.max(4096).optional(),
+    zxTemporaryArtifactId: z.string().uuid().optional(),
   })
-  .strict();
-
-const TemporaryObjectResultSchema = z
-  .object({
-    position: ResultPositionSchema,
-    zxObjectId: z.string().uuid(),
-    zxTemporaryArtifactId: z.string().uuid(),
-  })
-  .strict();
-
-export const RequestObjectResultSchema = z.union([
-  RegisteredObjectResultSchema,
-  TemporaryObjectResultSchema,
-]);
+  .strict()
+  .superRefine((value, context) => {
+    const locatorCount = Number(value.externalObjectId !== undefined) +
+      Number(value.zxTemporaryArtifactId !== undefined);
+    if (locatorCount !== 1) {
+      context.addIssue({
+        code: 'custom',
+        message: 'exactly one output handback locator is required',
+      });
+    }
+  });
 export type RequestObjectResult = z.infer<typeof RequestObjectResultSchema>;
 
 export const RequestResultV1Schema = z
@@ -75,13 +71,6 @@ export const RequestResultV1Schema = z
     state: RequestStateSchema,
     requestedOutputCount: z.number().int().positive(),
     outputs: z.array(RequestObjectResultSchema),
-    error: z
-      .object({
-        code: safeString.max(200),
-        message: safeString.max(4096),
-      })
-      .strict()
-      .optional(),
   })
   .strict();
 
