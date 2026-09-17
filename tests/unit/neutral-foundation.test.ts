@@ -1,24 +1,41 @@
-import { describe, expect, test } from 'vitest';
-import { loadConfig } from '../../src/config.js';
-import { parseWorkerStopRequest } from '../../src/worker/control.js';
+import { describe, expect, it } from 'vitest';
+import {
+  RequestObjectResultSchema,
+  RequestStateSchema,
+} from '../../src/contracts/v1/request.js';
 
-describe('neutral platform primitives', () => {
-  test('keeps one neutral runtime configuration surface', () => {
-    const config = loadConfig({
-      ZX_NODE_ENV: 'test',
-      ZX_FEATURE_IMAGE_GENERATE_ENABLED: 'true',
-      ZX_Z_S_BASE_URL: 'https://legacy.invalid',
-    });
-    expect(config.ZX_FEATURE_NEUTRAL_FOUNDATION_ONLY).toBe(true);
-    expect('ZX_FEATURE_IMAGE_GENERATE_ENABLED' in config).toBe(false);
-    expect('ZX_Z_S_BASE_URL' in config).toBe(false);
+describe('generic execution primitives', () => {
+  it('keeps Request lifecycle states generic', () => {
+    for (const state of [
+      'accepted',
+      'planned',
+      'queued',
+      'running',
+      'succeeded',
+      'failed',
+      'cancelled',
+      'reconciliation-required',
+    ]) {
+      expect(RequestStateSchema.parse(state)).toBe(state);
+    }
   });
 
-  test('preserves safe worker stop-control parsing', () => {
-    const parsed = parseWorkerStopRequest(JSON.stringify({
-      requestId: '123e4567-e89b-42d3-a456-426614174000',
-      requestedAt: '2026-09-17T00:00:00.000Z',
-    }));
-    expect(parsed.requestId).toBe('123e4567-e89b-42d3-a456-426614174000');
+  it('uses stable zxObjectId plus the route-specific locator', () => {
+    const zxObjectId = '11111111-1111-4111-8111-111111111111';
+    expect(RequestObjectResultSchema.parse({
+      position: 1,
+      zxObjectId,
+      externalObjectId: 'remote-object-id',
+    })).toEqual({ position: 1, zxObjectId, externalObjectId: 'remote-object-id' });
+
+    expect(RequestObjectResultSchema.parse({
+      position: 2,
+      zxObjectId,
+      zxTemporaryArtifactId: '22222222-2222-4222-8222-222222222222',
+    })).toEqual({
+      position: 2,
+      zxObjectId,
+      zxTemporaryArtifactId: '22222222-2222-4222-8222-222222222222',
+    });
   });
 });
