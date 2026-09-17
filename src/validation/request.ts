@@ -1,4 +1,4 @@
-import { ExecutionRequestV1Schema, type ExecutionRequestV1 } from '../contracts/v1/execution.js';
+import { RequestV1Schema, type RequestV1 } from '../contracts/v1/request.js';
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
@@ -17,12 +17,16 @@ function inspect(value: unknown, depth = 0): void {
   }
 }
 
-export function validateExecutionRequest(input: unknown): ExecutionRequestV1 {
+export function validateRequest(input: unknown): RequestV1 {
   const raw = JSON.stringify(input);
   if (Buffer.byteLength(raw) > MAX_BODY_BYTES) throw new Error('request body exceeds 256 KiB');
-  const parsed = ExecutionRequestV1Schema.parse(input);
-  const payload = JSON.stringify(parsed.payload);
-  if (Buffer.byteLength(payload) > MAX_PAYLOAD_BYTES) throw new Error('payload JSON exceeds 64 KiB');
-  inspect(parsed.payload);
+  const parsed = RequestV1Schema.parse(input);
+  const payload = JSON.stringify(parsed.inputPayload);
+  if (Buffer.byteLength(payload) > MAX_PAYLOAD_BYTES) {
+    throw new Error('inputPayload JSON exceeds 64 KiB');
+  }
+  inspect(parsed.inputPayload);
   return parsed;
 }
+
+export const validateExecutionRequest = validateRequest;
