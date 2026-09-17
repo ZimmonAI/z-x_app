@@ -3,6 +3,8 @@ import type { FastifyRequest } from 'fastify';
 import type { Config } from '../config.js';
 
 export interface Principal {
+  clientKey: string;
+  /** Transitional alias for fixture/auth compatibility; never sourced from request JSON. */
   ownerApp: string;
   scopes: Set<string>;
   payload: JWTPayload;
@@ -20,10 +22,15 @@ export function createAuthVerifier(config: Config): AuthVerifier {
   const jwks = createRemoteJWKSet(new URL(jwksUrl));
   return async (token) => {
     const { payload } = await jwtVerify(token, jwks, { issuer, audience });
-    const ownerApp = String(payload.owner_app ?? '');
+    const clientKey = String(payload.client_key ?? payload.owner_app ?? '');
     const scope = typeof payload.scope === 'string' ? payload.scope.split(' ') : [];
-    if (!ownerApp) throw new Error('owner_app missing');
-    return { ownerApp, scopes: new Set(scope.filter(Boolean)), payload };
+    if (!clientKey) throw new Error('client_key missing');
+    return {
+      clientKey,
+      ownerApp: clientKey,
+      scopes: new Set(scope.filter(Boolean)),
+      payload,
+    };
   };
 }
 
