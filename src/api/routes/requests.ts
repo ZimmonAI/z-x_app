@@ -225,24 +225,27 @@ async function selectOutputs(
     [request.id, request.storage_connection_id],
   );
 
-  return result.rows.flatMap((row) => {
+  const outputs: RequestResultV1['outputs'] = [];
+  for (const row of result.rows) {
     if (request.storage_connection_id !== null) {
-      return row.remote_object_id === null
-        ? []
-        : [{
-            position: row.position,
-            zxObjectId: row.zx_object_id,
-            externalObjectId: row.remote_object_id,
-          }];
-    }
-    return row.temporary_artifact_id === null
-      ? []
-      : [{
+      if (row.remote_object_id !== null) {
+        outputs.push({
           position: row.position,
           zxObjectId: row.zx_object_id,
-          zxTemporaryArtifactId: row.temporary_artifact_id,
-        }];
-  });
+          externalObjectId: row.remote_object_id,
+        });
+      }
+      continue;
+    }
+    if (row.temporary_artifact_id !== null) {
+      outputs.push({
+        position: row.position,
+        zxObjectId: row.zx_object_id,
+        zxTemporaryArtifactId: row.temporary_artifact_id,
+      });
+    }
+  }
+  return outputs;
 }
 
 async function materializeRecord(
