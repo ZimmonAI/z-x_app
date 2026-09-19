@@ -271,7 +271,7 @@ export class PostgresRequestService implements RequestService {
 
   async submit(clientKey: string, input: unknown): Promise<RequestServiceAction> {
     const request = validateRequest(input);
-    return withTransaction(this.pool, async (client) => {
+    const result = await withTransaction(this.pool, async (client) => {
       const duplicate = await client.query<RequestRow>(
         `select id, contract_version, client_key, client_request_ref, idempotency_key,
                 request_fingerprint, bundle_version_id, storage_connection_id,
@@ -286,7 +286,7 @@ export class PostgresRequestService implements RequestService {
         if (existing.request_fingerprint !== request.requestFingerprint) {
           conflict('idempotency conflict');
         }
-        return { code: 200, record: await materializeRecord(client, existing) };
+        return { kind: 'existing' as const, row: existing };
       }
 
       const bundle = await client.query<{ id: string }>(
@@ -356,10 +356,21 @@ export class PostgresRequestService implements RequestService {
         );
       }
 
-      const row = await selectRequest(client, clientKey, requestId);
-      if (!row) throw new Error('created request is missing');
-      return { code: 202, record: await materializeRecord(client, row) };
+      const record: RequestRecord = {
+        id: requestId,
+        clientKey,
+        request,
+        state: 'planned',
+        jobs,
+        outputs: [],
+      };
+      return { kind: 'created' as const, record };
     });
+
+    if (result.kind === 'existing') {
+      return { code: 200, record: await materializeRecord(this.pool, result.row) };
+    }
+    return { code: 202, record: result.record };
   }
 
   async get(clientKey: string, id: string): Promise<RequestRecord | null> {
