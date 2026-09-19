@@ -5,11 +5,17 @@ import { createLogger } from '../observability/logger.js';
 import { createPool, migrationCurrent } from '../persistence/pool.js';
 import { createAuthVerifier, type AuthVerifier } from './auth.js';
 import {
-  executionRoutes,
-  MemoryExecutionService,
-  PostgresExecutionService,
-  type ExecutionService,
-} from './routes/executions.js';
+  MemoryRequestService,
+  PostgresRequestService,
+  requestRoutes,
+  type RequestService,
+} from './routes/requests.js';
+import {
+  PostgresTemporaryArtifactReadService,
+  temporaryArtifactRoutes,
+  UnavailableTemporaryArtifactReadService,
+  type TemporaryArtifactReadService,
+} from './routes/temporary-artifacts.js';
 import { healthRoutes } from './routes/health.js';
 import { readinessRoutes } from './routes/readiness.js';
 
@@ -24,7 +30,8 @@ function isDatabaseError(error: unknown): boolean {
 export async function buildServer(options: {
   config: Config;
   verify?: AuthVerifier;
-  service?: ExecutionService;
+  requestService?: RequestService;
+  artifactService?: TemporaryArtifactReadService;
   ready?: () => Promise<boolean>;
 }) {
   const app = Fastify({
@@ -72,18 +79,31 @@ export async function buildServer(options: {
     void reply.code(statusCode).send({ error: message });
   });
 
-  const pool = options.service || !options.config.ZX_DATABASE_URL
+  const injectedPersistence = options.requestService !== undefined && options.artifactService !== undefined;
+  const pool = injectedPersistence || !options.config.ZX_DATABASE_URL
     ? undefined
     : createPool(options.config.ZX_DATABASE_URL);
-  const service =
-    options.service ??
+
+  const requestService =
+    options.requestService ??
     (pool
-      ? new PostgresExecutionService(pool)
+      ? new PostgresRequestService(pool)
       : options.config.ZX_NODE_ENV === 'test'
-        ? new MemoryExecutionService()
+        ? new MemoryRequestService()
         : undefined);
-  if (!service) {
+  if (!requestService) {
     throw new Error('ZX_DATABASE_URL required outside explicit test service injection');
+  }
+
+  const artifactService =
+    options.artifactService ??
+    (pool
+      ? new PostgresTemporaryArtifactReadService(pool)
+      : options.config.ZX_NODE_ENV === 'test'
+        ? new UnavailableTemporaryArtifactReadService()
+        : undefined);
+  if (!artifactService) {
+    throw new Error('temporary artifact persistence required outside tests');
   }
 
   const verify = options.verify ?? createAuthVerifier(options.config);
@@ -107,6 +127,7 @@ export async function buildServer(options: {
 
   await healthRoutes(app);
   await readinessRoutes(app, { ready });
-  await executionRoutes(app, { verify, service });
+  await requestRoutes(app, { verify, service: requestService });
+  await temporaryArtifactRoutes(app, { verify, service: artifactService });
   return app;
 }

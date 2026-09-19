@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-const booleanFromEnvironment = z
-  .enum(['true', 'false'])
-  .transform((value) => value === 'true');
 const optionalUrl = z.string().url().optional();
 
 const configSchema = z
@@ -23,7 +20,7 @@ const configSchema = z
     ZX_FIXTURE_AUTH_PRIVATE_JWK_JSON: z.string().min(1).optional(),
     ZX_FIXTURE_AUTH_PUBLIC_JWKS_JSON: z.string().min(1).optional(),
     ZX_FIXTURE_AUTH_TOKEN_TTL_SECONDS: z.coerce.number().int().min(1).max(300).optional(),
-    ZX_WORKER_ID: z.string().min(1).default('neutral-worker'),
+    ZX_WORKER_ID: z.string().min(1).default('generic-worker'),
     ZX_WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(32).default(4),
     ZX_WORKER_LEASE_SECONDS: z.coerce.number().int().min(30).max(300).default(60),
     ZX_WORKER_HEARTBEAT_SECONDS: z.coerce.number().int().min(5).max(60).default(20),
@@ -34,7 +31,6 @@ const configSchema = z
     ZX_LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
-    ZX_FEATURE_NEUTRAL_FOUNDATION_ONLY: booleanFromEnvironment.default(true),
   })
   .strip()
   .superRefine((config, context) => {
@@ -43,13 +39,6 @@ const configSchema = z
         code: 'custom',
         path: ['ZX_WORKER_HEARTBEAT_SECONDS'],
         message: 'heartbeat interval must be shorter than the lease duration',
-      });
-    }
-    if (!config.ZX_FEATURE_NEUTRAL_FOUNDATION_ONLY) {
-      context.addIssue({
-        code: 'custom',
-        path: ['ZX_FEATURE_NEUTRAL_FOUNDATION_ONLY'],
-        message: 'execution runtime is intentionally disabled until the generic method runtime is implemented',
       });
     }
   });

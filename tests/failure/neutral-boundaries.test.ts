@@ -1,27 +1,36 @@
-import { describe, expect, test } from 'vitest';
-import { validateExecutionRequest } from '../../src/validation/request.js';
+import { describe, expect, it } from 'vitest';
+import { MemoryRequestService } from '../../src/api/routes/requests.js';
+import { validateRequest } from '../../src/validation/request.js';
 
-function request(payload: Record<string, unknown>) {
-  return {
-    contractVersion: 'zx.execution.v1',
-    ownerApp: 'owner-a',
-    ownerActionId: 'action-a',
-    idempotencyKey: 'idem-a',
-    requestFingerprint: 'd'.repeat(64),
-    payload,
-    traceId: 'trace-a',
-  };
-}
+const request = {
+  contractVersion: 'zx.execution.v1' as const,
+  idempotencyKey: 'idem-conflict',
+  requestFingerprint: 'c'.repeat(64),
+  bundleVersionId: '11111111-1111-4111-8111-111111111111',
+  requestedOutputCount: 1,
+  inputPayload: { arbitrary: true },
+};
 
-describe('neutral request failure boundaries', () => {
-  test('rejects oversized payloads', () => {
-    expect(() => validateExecutionRequest(request({ huge: 'x'.repeat(70 * 1024) }))).toThrow(
-      'payload JSON exceeds 64 KiB',
-    );
+describe('generic request failure boundaries', () => {
+  it('returns conflict semantics for an idempotency key reused with a changed fingerprint', async () => {
+    const service = new MemoryRequestService();
+    await service.submit('client-a', request);
+    await expect(service.submit('client-a', {
+      ...request,
+      requestFingerprint: 'd'.repeat(64),
+    })).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  test('rejects excessive nesting', () => {
-    const nested = { a: { b: { c: { d: { e: { f: { g: { h: { i: 'too-deep' } } } } } } } } };
-    expect(() => validateExecutionRequest(request(nested))).toThrow('JSON depth exceeds 8');
+  it('rejects body identity impersonation', () => {
+    expect(() => validateRequest({ ...request, clientKey: 'client-b' })).toThrow();
+    expect(() => validateRequest({ ...request, ownerApp: 'client-b' })).toThrow();
+  });
+
+  it('rejects oversized output requests and oversized opaque payload strings', () => {
+    expect(() => validateRequest({ ...request, requestedOutputCount: 257 })).toThrow();
+    expect(() => validateRequest({
+      ...request,
+      inputPayload: { value: 'x'.repeat(4097) },
+    })).toThrow();
   });
 });

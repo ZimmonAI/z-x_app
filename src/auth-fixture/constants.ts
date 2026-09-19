@@ -10,11 +10,10 @@ export const FIXTURE_AUTH_DEFAULT_TOKEN_TTL_SECONDS = 300;
 export const FIXTURE_AUTH_MAX_TOKEN_TTL_SECONDS = 300;
 export const FIXTURE_AUTH_ALLOWED_OWNER_APP = 'z-x-deployment-canary';
 export const FIXTURE_AUTH_ALLOWED_SCOPES = [
-  'zx.executions.submit',
-  'zx.executions.read',
-  'zx.executions.cancel',
-  'zx.executions.retry',
-  'zx.executions.reconcile',
+  'zx.requests.submit',
+  'zx.requests.read',
+  'zx.requests.cancel',
+  'zx.temporary-artifacts.read',
 ] as const;
 
 export type FixtureAuthScope = (typeof FIXTURE_AUTH_ALLOWED_SCOPES)[number];
